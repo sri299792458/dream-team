@@ -72,15 +72,15 @@ def main():
     pi = Agent(
         title="Principal Investigator",
         expertise="data science, machine learning, experimental design, research strategy",
-        goal="achieve the lowest possible MAE on shelf life prediction",
+        goal="optimize the target metric through systematic experimentation",
         role="lead the team, coordinate strategy, make high-level decisions"
     )
 
     data_scientist = Agent(
         title="Data Scientist",
-        expertise="Python, pandas, scikit-learn, feature engineering, EDA, statistical modeling",
-        goal="design and implement effective predictive models",
-        role="write code for data analysis, feature engineering, and model training"
+        expertise="Python, pandas, scikit-learn, data analysis, statistical modeling",
+        goal="design and implement effective predictive solutions",
+        role="write code for data exploration, modeling, and evaluation"
     )
 
     print(f"  ✅ {pi.title}")
