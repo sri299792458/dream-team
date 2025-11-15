@@ -271,6 +271,24 @@ Output ONLY the Python code, wrapped in ```python code blocks.
         # PI reviews results and recruits team
         print(f"\n{self.team_lead.title} reviewing exploration results and recruiting team...\n")
 
+        # Fetch research to inform recruitment decisions
+        research_summary = ""
+        print("📚 Searching research literature to inform team composition...\n")
+        try:
+            papers = self.research.research_topic(
+                query=problem_statement[:200],
+                context="Understanding what methodologies and expertise are commonly used",
+                num_papers=3
+            )
+            if papers:
+                research_summary = "\n## Relevant Research Approaches:\n"
+                for paper in papers[:2]:  # Just 2 for bootstrap
+                    research_summary += f"- {paper.get('title', 'Unknown')}: "
+                    research_summary += f"{paper.get('abstract', 'No abstract')[:100]}...\n"
+                research_summary += "\n"
+        except Exception as e:
+            print(f"   Note: Research search failed: {e}\n")
+
         recruitment_task = f"""
 Based on the problem and exploration results, decide what expertise you need on your team.
 
@@ -279,6 +297,8 @@ Based on the problem and exploration results, decide what expertise you need on 
 
 ## Exploration Results:
 {results['output'][:2000] if results['success'] else "Exploration failed, but you have the problem statement."}
+
+{research_summary}
 
 ## Your Task:
 List 1-3 team members you want to recruit. For each, provide:
@@ -378,6 +398,27 @@ Format your response as a simple list, one team member per line.
 
             history_context = f"\n## Previous Iteration:\nApproach: {last['approach'][:200]}...\nMetrics: {last['metrics']}{output_preview}\n"
 
+        # Fetch relevant research papers for context
+        research_context = ""
+        if self.iteration == 1:
+            # First iteration: get foundational papers
+            print("📚 Fetching relevant research papers...\n")
+            try:
+                papers = self.research.research_topic(
+                    query=problem_statement[:200],
+                    context="Looking for foundational methods and approaches",
+                    num_papers=3
+                )
+                if papers:
+                    research_context = "\n## Relevant Research:\n"
+                    for i, paper in enumerate(papers, 1):
+                        research_context += f"{i}. {paper.get('title', 'Unknown')} ({paper.get('year', 'N/A')})\n"
+                        if paper.get('abstract'):
+                            research_context += f"   {paper['abstract'][:150]}...\n"
+                    research_context += "\n"
+            except Exception as e:
+                print(f"   Note: Research search failed: {e}\n")
+
         agenda = f"""
 **BE CONCISE.** Decide what to implement this iteration.
 
@@ -388,6 +429,8 @@ Format your response as a simple list, one team member per line.
 {list(self.executor.data_context.keys())}
 
 {history_context}
+
+{research_context}
 
 ## Your Task:
 In 2-3 sentences, describe what needs to be implemented this iteration.
