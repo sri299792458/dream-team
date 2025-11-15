@@ -39,7 +39,7 @@ class ExperimentOrchestrator:
             evolution_engine: Engine for agent evolution
         """
         self.team_lead = team_lead
-        self.team_members = team_members
+        self.team_members = team_members  # Can be empty initially - PI recruits after bootstrap
         self.coding_agent = coding_agent
         self.all_agents = [team_lead] + team_members
         self.results_dir = Path(results_dir)
@@ -52,6 +52,7 @@ class ExperimentOrchestrator:
         self.iteration = 0
         self.experiment_history = []
         self.best_metric = None
+        self.bootstrap_completed = len(team_members) > 0  # Skip bootstrap if team already exists
 
     def run(
         self,
@@ -100,6 +101,15 @@ class ExperimentOrchestrator:
                 print(f"\n✅ Resumed from iteration {self.iteration}")
                 print(f"   Best {target_metric} so far: {self.best_metric}")
                 print(f"   Starting iteration {start_iteration}\n")
+                # If resumed, bootstrap already completed
+                self.bootstrap_completed = True
+
+        # Bootstrap phase: PI explores problem and recruits team
+        if not self.bootstrap_completed:
+            self._bootstrap_exploration(problem_statement)
+            self.bootstrap_completed = True
+            print("\n" + "="*60)
+            print("Bootstrap complete. Starting team iterations...\n")
 
         # Main iteration loop
         for self.iteration in range(start_iteration, max_iterations + 1):
@@ -171,6 +181,168 @@ class ExperimentOrchestrator:
         print(f"Results saved to: {self.results_dir}\n")
 
         return final_summary
+
+    def _bootstrap_exploration(self, problem_statement: str):
+        """
+        Bootstrap phase: PI explores problem and recruits team.
+
+        The PI (team lead) starts alone, explores the data with coding agent,
+        sees what the problem is about, then decides what expertise is needed
+        and recruits team members.
+        """
+        print("\n" + "="*60)
+        print("BOOTSTRAP: PI Initial Exploration")
+        print("="*60)
+        print(f"\n{self.team_lead.title} is exploring the problem alone...\n")
+
+        # PI decides what initial exploration is needed
+        exploration_task = f"""
+You've received a new research problem. Before assembling a team, you need to understand what you're dealing with.
+
+## Problem:
+{problem_statement}
+
+## Available Data:
+{list(self.executor.data_context.keys())}
+
+## Your Task:
+Decide what initial exploration will help you understand:
+1. What the data looks like (schemas, sizes, distributions)
+2. What the challenge involves
+3. What expertise you'll need on your team
+
+In 2-3 sentences, describe what exploration code should be written.
+"""
+
+        meeting = IndividualMeeting(save_dir=str(self.results_dir / 'meetings'))
+        exploration_plan = meeting.run(
+            agent=self.team_lead,
+            task=exploration_task,
+            num_iterations=1
+        )
+
+        print(f"\n{self.team_lead.title}'s exploration plan:\n{exploration_plan}\n")
+
+        # Coding agent implements exploration
+        print(f"💻 {self.coding_agent.title} implementing exploration...\n")
+
+        code_task = f"""
+The PI wants to do initial exploration. Write Python code to implement this:
+
+## PI's Request:
+{exploration_plan}
+
+## Available in execution context:
+- Libraries: pandas (pd), numpy (np), pathlib.Path
+- Variables: {list(self.executor.data_context.keys())}
+
+## Requirements:
+- Write exploratory code (e.g., .info(), .head(), .describe(), basic stats)
+- Include clear print statements showing what you find
+- Focus on understanding data structure and the problem
+
+Output ONLY the Python code, wrapped in ```python code blocks.
+"""
+
+        code_meeting = IndividualMeeting(save_dir=str(self.results_dir / 'meetings'))
+        code_output = code_meeting.run(
+            agent=self.coding_agent,
+            task=code_task,
+            num_iterations=1
+        )
+
+        code = extract_code_from_text(code_output)
+
+        # Execute exploration
+        print("⚙️  Executing exploration...\n")
+        results = self.executor.execute(code, description="Bootstrap exploration")
+
+        if results['success']:
+            print("✅ Exploration successful!\n")
+            print("Output:")
+            print("-" * 60)
+            print(results['output'])
+            print("-" * 60)
+        else:
+            print("❌ Exploration failed:")
+            print(results['error'])
+            # Continue anyway - PI can recruit based on problem statement
+
+        # PI reviews results and recruits team
+        print(f"\n{self.team_lead.title} reviewing exploration results and recruiting team...\n")
+
+        recruitment_task = f"""
+Based on the problem and exploration results, decide what expertise you need on your team.
+
+## Problem:
+{problem_statement}
+
+## Exploration Results:
+{results['output'][:2000] if results['success'] else "Exploration failed, but you have the problem statement."}
+
+## Your Task:
+List 1-3 team members you want to recruit. For each, provide:
+- Title (e.g., "ML Strategist", "Domain Expert", "Data Analyst")
+- Expertise (what they should know)
+- Role (what they'll contribute)
+
+Be specific about the skills needed based on what you learned.
+
+Format your response as a simple list, one team member per line.
+"""
+
+        recruitment_meeting = IndividualMeeting(save_dir=str(self.results_dir / 'meetings'))
+        recruitment_plan = recruitment_meeting.run(
+            agent=self.team_lead,
+            task=recruitment_task,
+            num_iterations=1
+        )
+
+        print(f"Recruitment plan:\n{recruitment_plan}\n")
+
+        # Parse and create team members from PI's plan
+        # For now, create ML Strategist as default (user can extend this)
+        # In future, could use LLM to parse and create custom agents
+        recruited_agents = self._parse_and_recruit(recruitment_plan)
+
+        self.team_members.extend(recruited_agents)
+        self.all_agents = [self.team_lead] + self.team_members
+
+        print(f"\n✅ Team assembled! {len(recruited_agents)} member(s) recruited:")
+        for agent in recruited_agents:
+            print(f"   - {agent.title}")
+
+        # Save bootstrap results
+        bootstrap_summary = {
+            'iteration': 0,
+            'phase': 'bootstrap',
+            'exploration_plan': exploration_plan,
+            'exploration_code': code,
+            'exploration_output': results['output'] if results['success'] else results['error'],
+            'recruitment_plan': recruitment_plan,
+            'recruited_agents': [{'title': a.title, 'expertise': a.expertise} for a in recruited_agents]
+        }
+        save_json(bootstrap_summary, self.results_dir / 'iteration_00_bootstrap.json')
+
+    def _parse_and_recruit(self, recruitment_plan: str) -> List[Agent]:
+        """
+        Parse PI's recruitment plan and create agents.
+
+        For now, creates a default ML Strategist.
+        Future: Use LLM to parse plan and create custom agents.
+        """
+        # Simple heuristic: if PI mentions ML/machine learning, add ML Strategist
+        # If mentions domain/food/chemistry, could add domain expert
+        # For now, default to ML Strategist
+
+        ml_strategist = Agent(
+            title="ML Strategist",
+            expertise="machine learning algorithms, feature engineering, model selection, predictive modeling",
+            goal="design effective predictive approaches based on data characteristics",
+            role="propose modeling strategies and analytical approaches"
+        )
+
+        return [ml_strategist]
 
     def _team_planning_meeting(self, problem_statement: str) -> str:
         """Run team meeting to plan approach"""

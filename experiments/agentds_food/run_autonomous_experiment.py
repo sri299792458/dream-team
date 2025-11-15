@@ -2,18 +2,29 @@
 """
 Dream Team Framework: AUTONOMOUS Shelf Life Prediction Experiment
 
-This script demonstrates the fully autonomous Dream Team framework with:
-- Strategy team (PI + ML Strategist) that discusses WHAT to implement
-- Research Engineer that translates discussions into executable code
+This script demonstrates the fully autonomous Dream Team framework with bootstrap:
+- PI starts alone, explores problem and data
+- PI recruits team based on what they learned
+- Strategy team discusses WHAT to implement
+- Research Engineer translates discussions into executable code
 - Autonomous iteration and evolution until goal achieved
 
-Architecture:
-1. Strategy team receives problem statement + data
-2. Team discusses what to implement (not how to code)
-3. Research Engineer translates discussion into code
-4. Execute and analyze results
-5. Evolve when stuck
-6. Iterate until optimized
+Bootstrap Phase (Iteration 0):
+1. PI receives problem statement + data
+2. PI decides what initial exploration is needed
+3. Research Engineer implements exploration code
+4. PI reviews exploration results
+5. PI recruits team members based on expertise needed
+
+Main Iterations:
+6. Full team discusses what to implement (not how to code)
+7. Research Engineer translates discussion into code
+8. Execute and analyze results
+9. Evolve when stuck
+10. Iterate until optimized
+
+This mirrors real research: PI doesn't assemble a team blindly,
+they first understand the problem, then recruit the right expertise.
 
 Usage:
     export GEMINI_API_KEY=your_key_here
@@ -80,37 +91,29 @@ def main():
     print(f"  Training batches: {len(batches_train):,}")
     print(f"  Test batches: {len(batches_test):,}\n")
 
-    # Create initial team
-    print("👥 Creating initial team...\n")
+    # Create initial setup (PI starts alone)
+    print("👥 Initial setup...\n")
 
-    # Strategy team (discuss WHAT to do, not HOW to code)
+    # Principal Investigator starts alone
     pi = Agent(
         title="Principal Investigator",
         expertise="machine learning strategy, experimental design, research methodology",
         goal="optimize the target metric through systematic experimentation",
-        role="lead the team, coordinate high-level strategy and research direction"
+        role="explore the problem, recruit team, coordinate research direction"
     )
 
-    ml_strategist = Agent(
-        title="ML Strategist",
-        expertise="machine learning algorithms, feature engineering, model selection",
-        goal="design effective predictive approaches",
-        role="propose modeling strategies and analytical approaches"
-    )
-
-    # Coding agent (translates discussions into code)
+    # Coding agent (translates all discussions into code)
     coding_agent = Agent(
         title="Research Engineer",
         expertise="Python, pandas, scikit-learn, numpy, data analysis, implementation",
-        goal="implement the team's research plans accurately and efficiently",
-        role="translate team discussions into executable code"
+        goal="implement research plans accurately and efficiently",
+        role="translate discussions and plans into executable code"
     )
 
-    print(f"  Strategy Team:")
-    print(f"    ✅ {pi.title}")
-    print(f"    ✅ {ml_strategist.title}")
-    print(f"  Implementation:")
-    print(f"    ✅ {coding_agent.title}\n")
+    print(f"  Starting with:")
+    print(f"    ✅ {pi.title} (will explore and recruit team)")
+    print(f"    ✅ {coding_agent.title} (implementation)")
+    print(f"\n  (Team members will be recruited during bootstrap)\n")
 
     # Prepare problem statement
     problem_statement = """
@@ -140,12 +143,12 @@ and iteratively improve your predictions to minimize MAE.
         'regions': regions,
     }
 
-    # Create orchestrator
+    # Create orchestrator (team_members empty - PI will recruit during bootstrap)
     results_dir = Path(__file__).parent / 'results' / 'autonomous_shelf_life'
 
     orchestrator = ExperimentOrchestrator(
         team_lead=pi,
-        team_members=[ml_strategist],
+        team_members=[],  # Empty - PI will recruit after exploring
         coding_agent=coding_agent,
         results_dir=results_dir
     )
@@ -153,11 +156,15 @@ and iteratively improve your predictions to minimize MAE.
     # Run autonomous experiment
     print("🚀 Starting autonomous experiment...\n")
     print("The workflow:")
-    print("  1. Strategy team discusses what to implement")
-    print("  2. Research Engineer translates discussion into code")
-    print("  3. Execute and analyze results")
-    print("  4. Evolve when stuck")
-    print("  5. Iterate until goal achieved\n")
+    print("  Bootstrap:")
+    print("    1. PI explores problem and data alone")
+    print("    2. PI recruits team based on what they learned")
+    print("  Main iterations:")
+    print("    3. Strategy team discusses what to implement")
+    print("    4. Research Engineer translates discussion into code")
+    print("    5. Execute and analyze results")
+    print("    6. Evolve when stuck")
+    print("    7. Iterate until goal achieved\n")
 
     final_results = orchestrator.run(
         problem_statement=problem_statement,
