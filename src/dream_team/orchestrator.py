@@ -190,6 +190,9 @@ class ExperimentOrchestrator:
 
             history_context = f"\n## Previous Iteration:\nApproach: {last['approach'][:200]}...\nMetrics: {last['metrics']}{output_preview}\n"
 
+        # Build team member list
+        team_list = [self.team_lead.title] + [m.title for m in self.team_members]
+
         agenda = f"""
 **BE CONCISE.** Plan what code to write for this iteration.
 
@@ -201,12 +204,15 @@ class ExperimentOrchestrator:
 
 {history_context}
 
-## Your Task:
-In 2-3 sentences, decide what code you'll write this iteration.
-- Will you explore data first? Build a model directly? Try a new approach?
-- What's the ONE key thing to implement?
+## Team Members:
+{', '.join(team_list)}
 
-Keep your response SHORT and ACTION-ORIENTED. You'll write the actual code next.
+## Your Task:
+In 2-3 sentences:
+1. What code needs to be written this iteration?
+2. WHO will write it? (specify team member by title)
+
+Keep your response SHORT and ACTION-ORIENTED.
 """
 
         meeting = TeamMeeting(save_dir=str(self.results_dir / 'meetings'))
@@ -219,13 +225,33 @@ Keep your response SHORT and ACTION-ORIENTED. You'll write the actual code next.
 
         return summary
 
+    def _select_implementer(self, approach: str) -> Agent:
+        """
+        Select which agent should implement the approach.
+
+        Searches the approach text for agent titles to determine who was assigned.
+        Falls back to first team member if no explicit assignment found.
+        """
+        approach_lower = approach.lower()
+
+        # Check each agent's title in the approach text
+        for agent in self.all_agents:
+            # Look for exact title match (case-insensitive)
+            if agent.title.lower() in approach_lower:
+                print(f"   Assigned to: {agent.title}\n")
+                return agent
+
+        # Fallback: use first team member or team lead
+        fallback = self.team_members[0] if self.team_members else self.team_lead
+        print(f"   No explicit assignment found, defaulting to: {fallback.title}\n")
+        return fallback
+
     def _implement_approach(self, approach: str) -> str:
         """Have an agent write code to implement the approach"""
         print("💻 Implementing approach...\n")
 
-        # Choose the most relevant agent (for now, use first team member)
-        # TODO: Could use LLM to select best agent for task
-        implementer = self.team_members[0] if self.team_members else self.team_lead
+        # Try to identify who should implement from the approach description
+        implementer = self._select_implementer(approach)
 
         task = f"""
 Write Python code to implement this approach:
@@ -346,8 +372,8 @@ Output ONLY the Python code, wrapped in ```python code blocks.
         Returns:
             Fixed code
         """
-        # Choose the most relevant agent (for now, use first team member)
-        implementer = self.team_members[0] if self.team_members else self.team_lead
+        # Use same agent who wrote the original code
+        implementer = self._select_implementer(approach)
 
         task = f"""
 Your code failed with an error. Fix it.
