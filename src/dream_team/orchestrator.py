@@ -267,22 +267,35 @@ Output ONLY the Python code, wrapped in ```python code blocks.
         return result
 
     def _extract_metrics(self, results: Dict[str, Any], target_metric: str) -> Dict[str, float]:
-        """Extract metrics from execution results"""
-        metrics = results.get('metrics', {})
+        """Extract metrics from execution results, ensuring JSON-serializable values only"""
+        raw_metrics = results.get('metrics', {})
 
-        # Try to find target metric in variables
+        # Filter to only keep JSON-serializable numeric values
+        metrics = {}
+        for key, value in raw_metrics.items():
+            try:
+                # Only keep simple numeric types
+                if isinstance(value, (int, float, np.integer, np.floating)):
+                    metrics[key] = float(value)
+                elif isinstance(value, (list, np.ndarray)):
+                    # For arrays, take the mean
+                    metrics[key] = float(np.mean(value))
+            except (TypeError, ValueError, AttributeError):
+                # Skip non-numeric or non-serializable values
+                pass
+
+        # Try to find target metric in variables if not in metrics
         if target_metric not in metrics:
             for key, value in results.get('variables', {}).items():
                 if target_metric in key.lower():
                     try:
                         # Handle arrays (take mean)
                         if hasattr(value, '__iter__') and not isinstance(value, str):
-                            import numpy as np
                             metrics[target_metric] = float(np.mean(value))
                         else:
                             metrics[target_metric] = float(value)
                         break
-                    except (TypeError, ValueError):
+                    except (TypeError, ValueError, AttributeError):
                         pass
 
         return metrics
