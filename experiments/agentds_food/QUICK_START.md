@@ -2,6 +2,31 @@
 
 This guide will help you run your first Dream Team experiment on the AgentDS Food Production benchmark.
 
+## Two Modes: Autonomous vs. Guided
+
+The Dream Team framework offers two modes:
+
+### 🤖 **AUTONOMOUS MODE** (Recommended - New!)
+Agents receive problem + data and autonomously:
+- Plan their own approach
+- Write their own code
+- Execute and analyze results
+- Evolve when stuck
+- Iterate until goal achieved
+
+**Zero handholding - full agent autonomy!**
+
+### 📓 **GUIDED MODE**
+Step-by-step Jupyter notebook showing:
+- How meetings work
+- How evolution happens
+- How research integration works
+- Example implementations
+
+Good for learning the framework internals.
+
+---
+
 ## Prerequisites
 
 1. **Install dependencies** (if not already done):
@@ -32,7 +57,33 @@ This guide will help you run your first Dream Team experiment on the AgentDS Foo
 
 ## Running the Experiment
 
-### Option 1: Jupyter Notebook (Recommended)
+### 🤖 Option 1: AUTONOMOUS MODE (Recommended)
+
+**Full agent autonomy - they do everything!**
+
+```bash
+cd experiments/agentds_food
+python run_autonomous_experiment.py
+```
+
+What happens:
+1. **Iteration 1**: Agents meet, plan approach, write code, execute, evaluate
+2. **Iteration 2**: Agents see results, adjust strategy, write new code, evaluate
+3. **Iteration 3+**: If performance plateaus → agents evolve → research papers → new approach
+4. **Continues**: Until target achieved or max iterations
+
+**Output:**
+- `results/autonomous_shelf_life/iteration_*.json` - Each iteration's results
+- `results/autonomous_shelf_life/code/` - All agent-generated code
+- `results/autonomous_shelf_life/meetings/` - Meeting transcripts
+- `results/autonomous_shelf_life/agents/` - Agent evolution snapshots
+- `results/autonomous_shelf_life/final_summary.json` - Complete summary
+
+**The agents are in full control - you just watch!**
+
+---
+
+### 📓 Option 2: GUIDED MODE (For Learning)
 
 ```bash
 cd experiments/agentds_food/notebooks
