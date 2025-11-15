@@ -7,6 +7,7 @@ Coordinates agents, code execution, and iterative improvement.
 from typing import List, Dict, Any, Optional
 from pathlib import Path
 import pandas as pd
+import numpy as np
 
 from .agent import Agent
 from .executor import CodeExecutor, extract_code_from_text
@@ -107,7 +108,7 @@ class ExperimentOrchestrator:
             iteration_summary = {
                 'iteration': self.iteration,
                 'approach': approach,
-                'results': results,
+                'results': self._make_json_serializable(results),
                 'metrics': metrics,
                 'agents_snapshot': [a.title for a in self.all_agents]
             }
@@ -367,6 +368,33 @@ Output ONLY the Python code, wrapped in ```python code blocks.
         elif not minimize and current > self.best_metric:
             self.best_metric = current
             print(f"\n✨ New best {target_metric}: {current:.4f}")
+
+    def _make_json_serializable(self, obj: Any) -> Any:
+        """Convert objects to JSON-serializable format"""
+        if isinstance(obj, dict):
+            return {k: self._make_json_serializable(v) for k, v in obj.items()}
+        elif isinstance(obj, list):
+            return [self._make_json_serializable(item) for item in obj]
+        elif isinstance(obj, (np.integer, np.floating)):
+            return float(obj)
+        elif isinstance(obj, np.ndarray):
+            return obj.tolist()
+        elif isinstance(obj, pd.DataFrame):
+            return f"<DataFrame: {obj.shape[0]} rows x {obj.shape[1]} cols>"
+        elif isinstance(obj, pd.Series):
+            return f"<Series: {len(obj)} items>"
+        elif hasattr(obj, '__module__') and hasattr(obj, '__name__'):
+            # Handle modules, functions, classes
+            return f"<{obj.__class__.__name__}>"
+        elif callable(obj):
+            return f"<callable: {obj.__class__.__name__}>"
+        else:
+            try:
+                # Try to convert to string if all else fails
+                str(obj)
+                return str(obj) if not isinstance(obj, (str, int, float, bool, type(None))) else obj
+            except:
+                return f"<non-serializable: {type(obj).__name__}>"
 
     def _generate_final_summary(self) -> Dict[str, Any]:
         """Generate final experiment summary"""
