@@ -180,7 +180,7 @@ class ExperimentOrchestrator:
             history_context = f"\n## Previous Iteration:\nApproach: {last['approach'][:200]}...\nMetrics: {last['metrics']}\n"
 
         agenda = f"""
-Plan the next iteration for this challenge.
+**BE CONCISE.** Plan what code to write for this iteration.
 
 ## Problem:
 {problem_statement}
@@ -190,13 +190,12 @@ Plan the next iteration for this challenge.
 
 {history_context}
 
-## Task:
-Decide what to implement in this iteration. Your response should describe:
-1. What analysis or modeling approach to try
-2. Key steps to take
-3. What code needs to be written
+## Your Task:
+In 2-3 sentences, decide what code you'll write this iteration.
+- Will you explore data first? Build a model directly? Try a new approach?
+- What's the ONE key thing to implement?
 
-Be specific and actionable.
+Keep your response SHORT and ACTION-ORIENTED. You'll write the actual code next.
 """
 
         meeting = TeamMeeting(save_dir=str(self.results_dir / 'meetings'))
@@ -204,7 +203,7 @@ Be specific and actionable.
             team_lead=self.team_lead,
             team_members=self.team_members,
             agenda=agenda,
-            num_rounds=2
+            num_rounds=1  # Reduced from 2 to 1 for speed
         )
 
         return summary
