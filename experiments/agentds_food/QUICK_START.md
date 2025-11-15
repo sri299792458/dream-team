@@ -1,35 +1,23 @@
-# Quick Start Guide: Shelf Life Prediction Experiment
+# Quick Start Guide: Autonomous Shelf Life Prediction
 
-This guide will help you run your first Dream Team experiment on the AgentDS Food Production benchmark.
+Run your first fully autonomous Dream Team experiment on the AgentDS Food Production benchmark.
 
-## Two Modes: Autonomous vs. Guided
+## What is Autonomous Mode?
 
-The Dream Team framework offers two modes:
-
-### 🤖 **AUTONOMOUS MODE** (Recommended - New!)
-Agents receive problem + data and autonomously:
-- Plan their own approach
-- Write their own code
-- Execute and analyze results
-- Evolve when stuck
-- Iterate until goal achieved
+Agents receive **problem statement + data** and autonomously:
+- ✅ Plan their own approach
+- ✅ Write their own code
+- ✅ Execute and analyze results
+- ✅ Evolve when stuck
+- ✅ Iterate until goal achieved
 
 **Zero handholding - full agent autonomy!**
-
-### 📓 **GUIDED MODE**
-Step-by-step Jupyter notebook showing:
-- How meetings work
-- How evolution happens
-- How research integration works
-- Example implementations
-
-Good for learning the framework internals.
 
 ---
 
 ## Prerequisites
 
-1. **Install dependencies** (if not already done):
+1. **Install dependencies**:
    ```bash
    cd ~/dream-team
    pip install -e ".[dream-team]"
@@ -40,7 +28,9 @@ Good for learning the framework internals.
    export GEMINI_API_KEY=your_key_here
    ```
 
-3. **Data placement**: Place the FoodProduction data in the correct location:
+   Get a free key at: https://aistudio.google.com
+
+3. **Place your data**:
    ```
    experiments/agentds_food/data/FoodProduction/
    ├── batches_train.csv
@@ -55,222 +45,301 @@ Good for learning the framework internals.
    └── market_memos.csv
    ```
 
-## Running the Experiment
+---
 
-### 🤖 Option 1: AUTONOMOUS MODE (Recommended)
-
-**Full agent autonomy - they do everything!**
+## Running the Autonomous Experiment
 
 ```bash
 cd experiments/agentds_food
 python run_autonomous_experiment.py
 ```
 
-What happens:
-1. **Iteration 1**: Agents meet, plan approach, write code, execute, evaluate
-2. **Iteration 2**: Agents see results, adjust strategy, write new code, evaluate
-3. **Iteration 3+**: If performance plateaus → agents evolve → research papers → new approach
-4. **Continues**: Until target achieved or max iterations
+### What Happens
 
-**Output:**
-- `results/autonomous_shelf_life/iteration_*.json` - Each iteration's results
-- `results/autonomous_shelf_life/code/` - All agent-generated code
-- `results/autonomous_shelf_life/meetings/` - Meeting transcripts
-- `results/autonomous_shelf_life/agents/` - Agent evolution snapshots
-- `results/autonomous_shelf_life/final_summary.json` - Complete summary
+**Iteration 1:**
+1. Agents hold team meeting → discuss approach
+2. Data Scientist writes Python code (feature engineering, model, evaluation)
+3. Code executes → outputs metrics
+4. Results recorded
 
-**The agents are in full control - you just watch!**
+**Iteration 2:**
+1. Agents review iteration 1 results
+2. Adjust strategy based on performance
+3. Write improved code
+4. Execute and evaluate
+
+**Iteration 3+:**
+1. If performance plateaus → evolution trigger fires
+2. Agents research academic papers (via Semantic Scholar)
+3. Agents evolve with domain expertise (e.g., food science)
+4. New specialized approach with evolved knowledge
+5. Continue iterating
+
+**Continues until:**
+- Target metric achieved, OR
+- Maximum iterations reached
 
 ---
 
-### 📓 Option 2: GUIDED MODE (For Learning)
+## Output Files
 
-```bash
-cd experiments/agentds_food/notebooks
-jupyter notebook 01_shelf_life_prediction.ipynb
+All results saved to: `results/autonomous_shelf_life/`
+
+```
+results/autonomous_shelf_life/
+├── iteration_01.json           # Complete iteration 1 record
+├── iteration_02.json           # Iteration 2
+├── iteration_03.json           # etc.
+├── code/
+│   ├── iteration_01.py         # Agent-generated code (iteration 1)
+│   ├── iteration_02.py         # Evolved approach (iteration 2)
+│   └── iteration_03.py         # Post-evolution code
+├── meetings/
+│   ├── team_meeting_*.json     # Team planning discussions
+│   └── individual_meeting_*.json  # Code generation sessions
+├── agents/
+│   ├── data_scientist_iter_3.json  # Agent snapshot after evolution
+│   └── ...
+└── final_summary.json          # Complete experiment summary
 ```
 
-Then execute cells in order to:
-1. Load and explore the data
-2. Create initial team of agents
-3. Run team meetings to discuss approach
-4. Research academic papers on shelf life prediction
-5. Evolve agents with domain expertise
-6. Engineer features based on agent insights
-7. Train and evaluate models
-8. Generate test predictions
+### Key Files Explained
 
-### Option 2: Python Script
+**`iteration_*.json`** - Complete record of each iteration:
+- Approach decided in meeting
+- Code generated
+- Execution results
+- Metrics achieved
+- Agent states
 
-Create a script `run_experiment.py`:
+**`code/iteration_*.py`** - Actual Python code written by agents:
+- Feature engineering functions
+- Model training code
+- Cross-validation logic
+- All agent-generated!
 
+**`meetings/*.json`** - Full meeting transcripts:
+- See agent discussions
+- Evolution of strategy
+- Decision-making process
+
+**`agents/*.json`** - Agent evolution snapshots:
+- Compare initial vs evolved personas
+- Knowledge base growth
+- Papers researched
+
+---
+
+## Example Output
+
+```
+======================================================================
+🚀 AUTONOMOUS DREAM TEAM EXPERIMENT
+======================================================================
+
+Problem: Predict remaining shelf life in days for food production batches
+Target Metric: mae (minimize)
+Max Iterations: 5
+
+============================================================
+ITERATION 1/5
+============================================================
+
+👥 Team planning meeting...
+
+📋 TEAM MEETING
+   Lead: Principal Investigator
+   Members: ['Data Scientist']
+   Rounds: 2
+
+💬 Principal Investigator:
+Let's analyze this shelf life prediction challenge...
+
+💬 Data Scientist:
+Based on the data, I propose feature engineering focused on...
+
+💻 Implementing approach...
+
+👤 INDIVIDUAL MEETING
+   Agent: Data Scientist
+   Iterations: 1
+
+💬 Data Scientist (initial):
 ```python
-import sys
-from pathlib import Path
-sys.path.insert(0, str(Path.cwd().parent.parent / 'src'))
-
 import pandas as pd
-from dream_team import Agent, TeamMeeting, EvolutionEngine, get_research_assistant
+import numpy as np
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.model_selection import cross_val_score
 
-# Load data
-DATA_DIR = Path('experiments/agentds_food/data/FoodProduction')
-batches_train = pd.read_csv(DATA_DIR / 'batches_train.csv')
-
-# Create team
-pi = Agent(
-    title="Principal Investigator",
-    expertise="data science, ML, research strategy",
-    goal="solve shelf life prediction challenge",
-    role="lead team and make decisions"
-)
-
-data_scientist = Agent(
-    title="Data Scientist",
-    expertise="EDA, feature engineering, statistical modeling",
-    goal="understand data and create features",
-    role="analyze data and propose models"
-)
-
-# Run meeting
-meeting = TeamMeeting(save_dir="experiments/agentds_food/results/shelf_life/meetings")
-summary = meeting.run(
-    team_lead=pi,
-    team_members=[data_scientist],
-    agenda="Analyze shelf life prediction challenge and develop modeling strategy",
-    num_rounds=2
-)
-
-print(summary)
+# Feature engineering
+train_features = batches_train.merge(products, on='sku_id')
+...
 ```
 
-Run with:
-```bash
-python run_experiment.py
+⚙️ Executing implementation...
+
+   ✅ Success
+   Output: Cross-validation MAE: 3.245
+
+✨ New best mae: 3.2450
+
+============================================================
+ITERATION 2/5
+============================================================
+
+... (agents iterate, evolve, and improve)
 ```
+
+---
 
 ## What the Framework Does
 
-### 1. **Initial Team Creation**
-- Creates agents with general expertise
-- Each agent has a role, expertise, and goal
+### 1. Agent Planning
+Agents meet to discuss the problem and plan their approach based on:
+- Problem statement
+- Available data
+- Previous iteration results (if any)
 
-### 2. **Team Meetings**
-- Agents discuss the problem
-- Lead coordinates discussion rounds
-- Generates meeting transcripts and summaries
+### 2. Code Generation
+Agent writes complete Python code:
+- Data loading and merging
+- Feature engineering
+- Model selection and training
+- Cross-validation
+- Metric calculation
 
-### 3. **Research Phase**
-- Agents search academic papers via Semantic Scholar
-- LLM analyzes paper relevance
-- Extracts key findings and techniques
+### 3. Execution
+Code runs in safe environment with access to:
+- All data (train/test, reference tables)
+- Common libraries (pandas, numpy, scikit-learn)
+- Previous iteration variables
 
-### 4. **Agent Evolution**
-- Agents evolve from generalists to specialists
-- Knowledge bases grow with papers and insights
-- Evolution history tracked
+### 4. Evolution
+When performance plateaus:
+- Research papers via Semantic Scholar
+- Extract relevant techniques
+- Evolve agent with domain expertise
+- New approach based on research
 
-### 5. **Iterative Improvement**
-- Features engineered based on agent insights
-- Models trained and evaluated
-- Performance triggers further evolution
+### 5. Iteration
+Continues until:
+- Target achieved
+- Max iterations reached
+- Agents decide they've optimized sufficiently
 
-## Expected Outputs
-
-After running the notebook, you'll have:
-
-```
-results/shelf_life/
-├── agents/                          # Agent snapshots
-│   ├── pi_initial.json
-│   ├── data_scientist_initial.json
-│   ├── data_scientist_evolved_v1.json
-│   └── ml_engineer_initial.json
-├── meetings/                        # Meeting transcripts
-│   ├── team_meeting_*.json
-│   └── individual_meeting_*.json
-├── predictions_baseline.csv         # Test predictions
-└── baseline_results.json            # Performance metrics
-```
-
-## Experiment Results
-
-The notebook will show:
-- **Cross-validation MAE**: Model performance estimate
-- **Feature importance**: Which features matter most
-- **Agent evolution**: How agents specialized
-- **Knowledge base**: Papers and techniques learned
-- **Test predictions**: Ready for submission
-
-## Next Steps
-
-1. **Improve Performance**:
-   - Try different models (GradientBoosting, XGBoost)
-   - Hyperparameter tuning
-   - More sophisticated feature engineering
-
-2. **Trigger Evolution**:
-   - Run multiple iterations to build history
-   - Performance plateau will trigger agent evolution
-   - Research more papers when stuck
-
-3. **Error Analysis**:
-   - Analyze prediction errors
-   - Identify patterns in failures
-   - Use insights to evolve specialists
-
-4. **Try Other Challenges**:
-   - Quality Control (Challenge 2)
-   - Demand Forecasting (Challenge 3)
+---
 
 ## Troubleshooting
 
-### Issue: Data not found
-**Solution**: Ensure FoodProduction folder is in `experiments/agentds_food/data/`
-
-### Issue: GEMINI_API_KEY not set
-**Solution**:
+### Issue: `GEMINI_API_KEY not set`
 ```bash
 export GEMINI_API_KEY=your_key_here
 ```
-Get a free key at: https://aistudio.google.com
+Get free key at: https://aistudio.google.com
 
-### Issue: Module not found
-**Solution**:
+### Issue: Data directory not found
+Ensure FoodProduction folder is at:
+```
+~/dream-team/experiments/agentds_food/data/FoodProduction/
+```
+
+### Issue: Import errors
 ```bash
 cd ~/dream-team
 pip install -e ".[dream-team]"
 ```
 
-### Issue: Permission errors
-**Solution**:
-```bash
-chmod -R 755 experiments/agentds_food/
-```
+### Issue: Code execution fails
+- Check generated code in `results/autonomous_shelf_life/code/`
+- Review execution error in iteration JSON file
+- Agents will see errors and adjust in next iteration
 
-## Understanding the Output
+### Issue: API rate limits
+- Gemini has generous free tier
+- If hit limits, add delays or reduce max_iterations
+
+---
+
+## Understanding Agent Behavior
 
 ### Meeting Transcripts
-- Located in `results/shelf_life/meetings/`
-- Shows agent discussions and decisions
-- Tracks reasoning process
+Read `meetings/team_meeting_*.json` to see:
+- How agents analyze the problem
+- What strategies they propose
+- How they incorporate previous results
+- Evolution of thinking over iterations
+
+### Generated Code
+Inspect `code/iteration_*.py` to see:
+- What features agents engineered
+- Model choices and hyperparameters
+- How code evolves iteration to iteration
+- Impact of agent evolution on code quality
 
 ### Agent Evolution
-- Each evolution creates a new snapshot
-- Compare `initial.json` vs `evolved_v1.json`
-- See knowledge base growth
+Compare agent snapshots:
+- `agents/data_scientist_initial.json` (if manually saved)
+- `agents/data_scientist_iter_3.json` (post-evolution)
 
-### Performance Metrics
-- `baseline_results.json` contains:
-  - CV MAE scores
-  - Feature count
-  - Model metadata
-  - Timestamp
+See:
+- Title change (e.g., "Data Scientist" → "Food Science ML Specialist")
+- Expertise deepening
+- Knowledge base growth (papers, techniques, facts)
+
+---
+
+## Next Steps
+
+### Improve Performance
+1. **Increase iterations**: Change `max_iterations=5` to higher value
+2. **Add agents**: Include more team members with different expertise
+3. **Tune evolution triggers**: Adjust plateau detection sensitivity
+
+### Try Other Challenges
+```bash
+# Quality Control (Challenge 2)
+# Modify problem_statement and data_context in run_autonomous_experiment.py
+
+# Demand Forecasting (Challenge 3)
+# Use demand_train.csv and demand_test.csv
+```
+
+### Experiment with Prompts
+Edit `run_autonomous_experiment.py`:
+- Modify `problem_statement` to guide agents differently
+- Change agent initial expertise
+- Adjust max_iterations, target_score
+
+### Extend the Framework
+- Add new evolution triggers (error patterns, knowledge gaps)
+- Implement agent specialization (multiple agents evolving differently)
+- Add more sophisticated code execution (timeouts, sandboxing)
+
+---
 
 ## Philosophy
 
-The Dream Team framework learns **how to become the type of team that solves tasks like this**:
-- Agents discover needed specializations
-- Research drives persona evolution
-- Complete history provides observability
+> **The framework learns to become the type of team that solves tasks like this.**
+
+Unlike traditional ML pipelines:
+- ❌ No hardcoded features
+- ❌ No predetermined models
+- ❌ No fixed approach
+
+Instead:
+- ✅ Agents discover what works
+- ✅ Evolve based on results
+- ✅ Research when stuck
+- ✅ Emergent expertise
+
+**This is meta-learning: learning how to learn to solve problems.**
+
+---
+
+## Support
+
+- **Issues**: https://github.com/sri299792458/dream-team/issues
+- **Docs**: Main README.md in repo root
+- **Framework code**: `src/dream_team/`
 
 Happy experimenting! 🚀

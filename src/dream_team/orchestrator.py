@@ -213,7 +213,7 @@ Output ONLY the Python code, wrapped in ```python code blocks.
         code_output = meeting.run(
             agent=implementer,
             task=task,
-            max_iterations=1  # No iteration for now, just generate code
+            num_iterations=1  # No iteration for now, just generate code
         )
 
         # Extract code from output
