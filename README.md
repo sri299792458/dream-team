@@ -33,7 +33,30 @@ Fast iteration optimized for well-defined problems:
 - Leaderboard-driven hill climbing
 - Observable progress tracking
 
+### 🤖 Autonomous Experimentation
+Agents operate with full autonomy:
+- **Code Generation**: Agents write their own Python code
+- **Execution**: Safe code execution environment
+- **Self-Iteration**: Analyze results and adjust approach
+- **Zero Handholding**: Give agents problem + data, they do the rest
+
 ## Quick Start
+
+### Autonomous Mode (Recommended)
+
+```bash
+cd experiments/agentds_food
+python run_autonomous_experiment.py
+```
+
+Agents autonomously:
+1. Plan approach based on problem
+2. Write and execute code
+3. Analyze results
+4. Evolve when stuck
+5. Iterate until goal achieved
+
+### API Usage
 
 ```python
 from dream_team import Agent, TeamMeeting, EvolutionEngine, get_research_assistant
@@ -91,12 +114,15 @@ src/dream_team/
 ├── research.py        # Semantic Scholar integration
 ├── evolution.py       # Evolution engine and triggers
 ├── meetings.py        # Team and individual meetings
+├── executor.py        # Code execution environment
+├── orchestrator.py    # Autonomous experiment orchestration
 └── utils.py           # Helper functions
 
 experiments/agentds_food/
-├── data/              # Benchmark data
-├── results/           # Evolution history, meetings, experiments
-└── notebooks/         # Jupyter notebooks for experiments
+├── data/                        # Benchmark data
+├── results/                     # Evolution history, meetings, experiments
+├── notebooks/                   # Guided mode notebooks
+└── run_autonomous_experiment.py # Autonomous mode script
 ```
 
 ## Installation

@@ -19,6 +19,8 @@ from .evolution import (
     KnowledgeGapTrigger
 )
 from .meetings import TeamMeeting, IndividualMeeting
+from .executor import CodeExecutor, extract_code_from_text
+from .orchestrator import ExperimentOrchestrator
 from .utils import save_json, load_json, load_summaries
 
 __version__ = "0.1.0"
@@ -39,6 +41,9 @@ __all__ = [
     "KnowledgeGapTrigger",
     "TeamMeeting",
     "IndividualMeeting",
+    "CodeExecutor",
+    "extract_code_from_text",
+    "ExperimentOrchestrator",
     "save_json",
     "load_json",
     "load_summaries",

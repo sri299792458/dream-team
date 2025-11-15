@@ -1,0 +1,386 @@
+"""
+Experiment orchestration for autonomous Dream Team operation.
+
+Coordinates agents, code execution, and iterative improvement.
+"""
+
+from typing import List, Dict, Any, Optional
+from pathlib import Path
+import pandas as pd
+
+from .agent import Agent
+from .executor import CodeExecutor, extract_code_from_text
+from .meetings import TeamMeeting, IndividualMeeting
+from .evolution import EvolutionEngine, EvolutionTrigger
+from .research import get_research_assistant
+from .utils import save_json
+
+
+class ExperimentOrchestrator:
+    """Orchestrates autonomous experimentation with evolving agents"""
+
+    def __init__(
+        self,
+        team_lead: Agent,
+        team_members: List[Agent],
+        results_dir: Path,
+        evolution_engine: Optional[EvolutionEngine] = None
+    ):
+        """
+        Initialize orchestrator.
+
+        Args:
+            team_lead: Lead agent who coordinates
+            team_members: Other agents on the team
+            results_dir: Directory to save results
+            evolution_engine: Engine for agent evolution
+        """
+        self.team_lead = team_lead
+        self.team_members = team_members
+        self.all_agents = [team_lead] + team_members
+        self.results_dir = Path(results_dir)
+        self.results_dir.mkdir(parents=True, exist_ok=True)
+
+        self.evolution_engine = evolution_engine or EvolutionEngine()
+        self.executor = None  # Created when run() is called
+        self.research = get_research_assistant()
+
+        self.iteration = 0
+        self.experiment_history = []
+        self.best_metric = None
+
+    def run(
+        self,
+        problem_statement: str,
+        data_context: Dict[str, Any],
+        target_metric: str,
+        minimize_metric: bool = True,
+        max_iterations: int = 5,
+        target_score: Optional[float] = None
+    ) -> Dict[str, Any]:
+        """
+        Run autonomous experimentation.
+
+        Args:
+            problem_statement: Description of the challenge
+            data_context: Dictionary with data (e.g., {'train_df': df, 'test_df': df})
+            target_metric: Name of metric to optimize (e.g., 'mae', 'f1')
+            minimize_metric: Whether lower is better
+            max_iterations: Maximum iterations before stopping
+            target_score: Optional target score to achieve
+
+        Returns:
+            Final experiment summary
+        """
+        print("="*60)
+        print("🚀 AUTONOMOUS DREAM TEAM EXPERIMENT")
+        print("="*60)
+        print(f"\nProblem: {problem_statement[:100]}...")
+        print(f"Target Metric: {target_metric} ({'minimize' if minimize_metric else 'maximize'})")
+        print(f"Max Iterations: {max_iterations}")
+        if target_score:
+            print(f"Target Score: {target_score}")
+        print()
+
+        # Initialize executor with data
+        self.executor = CodeExecutor(data_context=data_context)
+
+        # Main iteration loop
+        for self.iteration in range(1, max_iterations + 1):
+            print(f"\n{'='*60}")
+            print(f"ITERATION {self.iteration}/{max_iterations}")
+            print(f"{'='*60}\n")
+
+            # Step 1: Team meeting to discuss approach
+            approach = self._team_planning_meeting(problem_statement)
+
+            # Step 2: Agent implements the approach (writes code)
+            implementation = self._implement_approach(approach)
+
+            # Step 3: Execute code and get results
+            results = self._execute_implementation(implementation)
+
+            # Step 4: Evaluate performance
+            metrics = self._extract_metrics(results, target_metric)
+
+            # Step 5: Record iteration
+            iteration_summary = {
+                'iteration': self.iteration,
+                'approach': approach,
+                'results': results,
+                'metrics': metrics,
+                'agents_snapshot': [a.title for a in self.all_agents]
+            }
+            self.experiment_history.append(iteration_summary)
+
+            # Save iteration results
+            save_json(
+                iteration_summary,
+                self.results_dir / f'iteration_{self.iteration:02d}.json'
+            )
+
+            # Step 6: Check if target achieved
+            if self._check_goal_achieved(metrics, target_metric, target_score, minimize_metric):
+                print(f"\n🎯 Target achieved! {target_metric}: {metrics.get(target_metric)}")
+                break
+
+            # Step 7: Check if evolution needed
+            should_evolve = self._check_evolution_triggers(metrics, target_metric, minimize_metric)
+
+            if should_evolve:
+                self._evolve_team(problem_statement, metrics)
+
+            # Step 8: Update best metric
+            self._update_best_metric(metrics, target_metric, minimize_metric)
+
+        # Final summary
+        final_summary = self._generate_final_summary()
+        save_json(final_summary, self.results_dir / 'final_summary.json')
+
+        print(f"\n{'='*60}")
+        print("✅ EXPERIMENT COMPLETE")
+        print(f"{'='*60}")
+        print(f"\nTotal Iterations: {self.iteration}")
+        print(f"Best {target_metric}: {self.best_metric}")
+        print(f"Results saved to: {self.results_dir}\n")
+
+        return final_summary
+
+    def _team_planning_meeting(self, problem_statement: str) -> str:
+        """Run team meeting to plan approach"""
+        print("👥 Team planning meeting...\n")
+
+        # Get current context
+        history_context = ""
+        if self.experiment_history:
+            last = self.experiment_history[-1]
+            history_context = f"\n## Previous Iteration:\nApproach: {last['approach'][:200]}...\nMetrics: {last['metrics']}\n"
+
+        agenda = f"""
+Plan the next iteration for this challenge.
+
+## Problem:
+{problem_statement}
+
+## Available Data:
+{list(self.executor.data_context.keys())}
+
+{history_context}
+
+## Task:
+Decide what to implement in this iteration. Your response should describe:
+1. What analysis or modeling approach to try
+2. Key steps to take
+3. What code needs to be written
+
+Be specific and actionable.
+"""
+
+        meeting = TeamMeeting(save_dir=str(self.results_dir / 'meetings'))
+        summary = meeting.run(
+            team_lead=self.team_lead,
+            team_members=self.team_members,
+            agenda=agenda,
+            num_rounds=2
+        )
+
+        return summary
+
+    def _implement_approach(self, approach: str) -> str:
+        """Have an agent write code to implement the approach"""
+        print("💻 Implementing approach...\n")
+
+        # Choose the most relevant agent (for now, use first team member)
+        # TODO: Could use LLM to select best agent for task
+        implementer = self.team_members[0] if self.team_members else self.team_lead
+
+        task = f"""
+Write Python code to implement this approach:
+
+{approach}
+
+Requirements:
+- Use pandas (pd), numpy (np) available in scope
+- Available data: {list(self.executor.data_context.keys())}
+- Write complete, executable Python code
+- Include print statements for key results
+- Store final metrics in variables (e.g., mae, cv_scores, f1_score)
+
+Output ONLY the Python code, wrapped in ```python code blocks.
+"""
+
+        meeting = IndividualMeeting(save_dir=str(self.results_dir / 'meetings'))
+        code_output = meeting.run(
+            agent=implementer,
+            task=task,
+            max_iterations=1  # No iteration for now, just generate code
+        )
+
+        # Extract code from output
+        code = extract_code_from_text(code_output)
+
+        # Save generated code
+        code_file = self.results_dir / 'code' / f'iteration_{self.iteration:02d}.py'
+        code_file.parent.mkdir(exist_ok=True)
+        code_file.write_text(code)
+
+        print(f"   Code saved to: {code_file}\n")
+
+        return code
+
+    def _execute_implementation(self, code: str) -> Dict[str, Any]:
+        """Execute the generated code"""
+        print("⚙️ Executing implementation...\n")
+
+        result = self.executor.execute(
+            code=code,
+            description=f"Iteration {self.iteration} implementation"
+        )
+
+        if not result['success']:
+            print(f"   ❌ Execution failed: {result['error']}\n")
+            print(f"   Traceback:\n{result['traceback']}\n")
+
+        return result
+
+    def _extract_metrics(self, results: Dict[str, Any], target_metric: str) -> Dict[str, float]:
+        """Extract metrics from execution results"""
+        metrics = results.get('metrics', {})
+
+        # Try to find target metric in variables
+        if target_metric not in metrics:
+            for key, value in results.get('variables', {}).items():
+                if target_metric in key.lower():
+                    try:
+                        # Handle arrays (take mean)
+                        if hasattr(value, '__iter__') and not isinstance(value, str):
+                            import numpy as np
+                            metrics[target_metric] = float(np.mean(value))
+                        else:
+                            metrics[target_metric] = float(value)
+                        break
+                    except (TypeError, ValueError):
+                        pass
+
+        return metrics
+
+    def _check_goal_achieved(
+        self,
+        metrics: Dict[str, float],
+        target_metric: str,
+        target_score: Optional[float],
+        minimize: bool
+    ) -> bool:
+        """Check if target score achieved"""
+        if not target_score or target_metric not in metrics:
+            return False
+
+        current = metrics[target_metric]
+
+        if minimize:
+            return current <= target_score
+        else:
+            return current >= target_score
+
+    def _check_evolution_triggers(
+        self,
+        metrics: Dict[str, float],
+        target_metric: str,
+        minimize: bool
+    ) -> bool:
+        """Check if agents should evolve"""
+        if len(self.experiment_history) < 3:
+            return False  # Need history to detect plateau
+
+        # Build context for triggers
+        metric_history = [
+            h['metrics'].get(target_metric, float('inf') if minimize else float('-inf'))
+            for h in self.experiment_history
+        ]
+
+        context = {
+            'metric_history': metric_history,
+            'minimize_metric': minimize
+        }
+
+        triggers = self.evolution_engine.check_triggers(context)
+
+        if triggers:
+            print(f"\n🔔 Evolution triggers detected:")
+            for trigger_name, reason in triggers:
+                print(f"   - {trigger_name}: {reason}")
+            return True
+
+        return False
+
+    def _evolve_team(self, problem_statement: str, current_metrics: Dict[str, float]):
+        """Evolve team members based on current challenges"""
+        print("\n🧬 Evolving team...\n")
+
+        # Research relevant papers
+        print("📚 Researching papers...\n")
+        papers = self.research.research_topic(
+            query=problem_statement[:200],
+            context=f"Current performance: {current_metrics}",
+            num_papers=3
+        )
+
+        # Evolve first team member (or could evolve all)
+        if self.team_members:
+            agent = self.team_members[0]
+
+            context = {
+                'problem_description': problem_statement,
+                'performance_metrics': current_metrics,
+                'iteration': self.iteration
+            }
+
+            self.evolution_engine.evolve_agent(
+                agent=agent,
+                context=context,
+                papers=papers,
+                trigger_reason=f"Performance plateau at iteration {self.iteration}"
+            )
+
+            # Save evolved agent
+            agent.save(
+                self.results_dir / 'agents' / f'{agent.title.lower().replace(" ", "_")}_iter_{self.iteration}.json'
+            )
+
+    def _update_best_metric(
+        self,
+        metrics: Dict[str, float],
+        target_metric: str,
+        minimize: bool
+    ):
+        """Update best metric seen so far"""
+        if target_metric not in metrics:
+            return
+
+        current = metrics[target_metric]
+
+        if self.best_metric is None:
+            self.best_metric = current
+        elif minimize and current < self.best_metric:
+            self.best_metric = current
+            print(f"\n✨ New best {target_metric}: {current:.4f}")
+        elif not minimize and current > self.best_metric:
+            self.best_metric = current
+            print(f"\n✨ New best {target_metric}: {current:.4f}")
+
+    def _generate_final_summary(self) -> Dict[str, Any]:
+        """Generate final experiment summary"""
+        return {
+            'total_iterations': self.iteration,
+            'best_metric': self.best_metric,
+            'final_team': [
+                {
+                    'title': a.title,
+                    'expertise': a.expertise,
+                    'specialization_depth': a.specialization_depth
+                }
+                for a in self.all_agents
+            ],
+            'iteration_history': self.experiment_history,
+            'execution_summary': self.executor.summary()
+        }
