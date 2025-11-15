@@ -90,32 +90,19 @@ def main():
     problem_statement = """
 Predict the remaining shelf life in days for food production batches.
 
-Challenge: Shelf Life Prediction for Food Production
-Metric: Mean Absolute Error (MAE) - lower is better
-Goal: Minimize prediction error for remaining shelf life days
+Target Variable: shelf_life_remaining_days (continuous)
+Evaluation Metric: Mean Absolute Error (MAE) - lower is better
 
 Data Available:
-- batches_train: Training data with features and shelf_life_remaining_days target
-- batches_test: Test data (features only, need to predict target)
-- products: Product catalog with category, storage_class, base_shelf_life_days
-- sites: Production site information with region_id, line_type
-- regions: Regional data with seasonality_amp
+- batches_train: Training data with target variable
+- batches_test: Test data (predict target)
+- products: Product reference data
+- sites: Production site reference data
+- regions: Regional reference data
 
-Key Features:
-- dwell_hours: Hours in storage
-- mean_temp_F: Average temperature (Fahrenheit)
-- mean_rh_pct: Average relative humidity percentage
-- door_opens_count: Number of door openings (temperature abuse indicator)
-- sku_id: Product SKU (join with products)
-- site_id: Production site (join with sites)
-
-Task:
-Design and implement a solution to predict shelf_life_remaining_days for test batches.
-Focus on:
-1. Feature engineering based on storage physics
-2. Model selection and training
-3. Cross-validation for robust evaluation
-4. Iterative improvement based on results
+Your Goal:
+Build the best possible predictive solution. Explore the data, decide your approach,
+and iteratively improve your predictions to minimize MAE.
 """
 
     # Set up data context (what agents can access)
