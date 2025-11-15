@@ -2,19 +2,27 @@
 """
 Dream Team Framework: AUTONOMOUS Shelf Life Prediction Experiment
 
-This script demonstrates the fully autonomous Dream Team framework where agents:
-1. Receive problem statement + data
-2. Plan their own approach
-3. Write their own code
+This script demonstrates the fully autonomous Dream Team framework with:
+- Strategy team (PI + ML Strategist) that discusses WHAT to implement
+- Research Engineer that translates discussions into executable code
+- Autonomous iteration and evolution until goal achieved
+
+Architecture:
+1. Strategy team receives problem statement + data
+2. Team discusses what to implement (not how to code)
+3. Research Engineer translates discussion into code
 4. Execute and analyze results
-5. Evolve when they plateau
-6. Iterate until goal achieved
+5. Evolve when stuck
+6. Iterate until optimized
 
 Usage:
+    export GEMINI_API_KEY=your_key_here
+    export SEMANTIC_SCHOLAR_API_KEY=your_key_here
     python run_autonomous_experiment.py
 
 Requirements:
     - GEMINI_API_KEY environment variable set
+    - SEMANTIC_SCHOLAR_API_KEY environment variable set
     - FoodProduction data in data/FoodProduction/
 """
 
@@ -47,6 +55,12 @@ def main():
         print("   Then run: export GEMINI_API_KEY=your_key_here")
         sys.exit(1)
 
+    if not os.getenv('SEMANTIC_SCHOLAR_API_KEY'):
+        print("❌ SEMANTIC_SCHOLAR_API_KEY not set!")
+        print("   Get a free key at: https://www.semanticscholar.org/product/api")
+        print("   Then run: export SEMANTIC_SCHOLAR_API_KEY=your_key_here")
+        sys.exit(1)
+
     data_dir = Path(__file__).parent / 'data' / 'FoodProduction'
     if not data_dir.exists():
         print(f"❌ Data directory not found: {data_dir}")
@@ -69,22 +83,34 @@ def main():
     # Create initial team
     print("👥 Creating initial team...\n")
 
+    # Strategy team (discuss WHAT to do, not HOW to code)
     pi = Agent(
         title="Principal Investigator",
-        expertise="data science, machine learning, experimental design, research strategy",
+        expertise="machine learning strategy, experimental design, research methodology",
         goal="optimize the target metric through systematic experimentation",
-        role="lead the team, coordinate strategy, make high-level decisions"
+        role="lead the team, coordinate high-level strategy and research direction"
     )
 
-    data_scientist = Agent(
-        title="Data Scientist",
-        expertise="Python, pandas, scikit-learn, data analysis, statistical modeling",
-        goal="design and implement effective predictive solutions",
-        role="write code for data exploration, modeling, and evaluation"
+    ml_strategist = Agent(
+        title="ML Strategist",
+        expertise="machine learning algorithms, feature engineering, model selection",
+        goal="design effective predictive approaches",
+        role="propose modeling strategies and analytical approaches"
     )
 
-    print(f"  ✅ {pi.title}")
-    print(f"  ✅ {data_scientist.title}\n")
+    # Coding agent (translates discussions into code)
+    coding_agent = Agent(
+        title="Research Engineer",
+        expertise="Python, pandas, scikit-learn, numpy, data analysis, implementation",
+        goal="implement the team's research plans accurately and efficiently",
+        role="translate team discussions into executable code"
+    )
+
+    print(f"  Strategy Team:")
+    print(f"    ✅ {pi.title}")
+    print(f"    ✅ {ml_strategist.title}")
+    print(f"  Implementation:")
+    print(f"    ✅ {coding_agent.title}\n")
 
     # Prepare problem statement
     problem_statement = """
@@ -119,15 +145,16 @@ and iteratively improve your predictions to minimize MAE.
 
     orchestrator = ExperimentOrchestrator(
         team_lead=pi,
-        team_members=[data_scientist],
+        team_members=[ml_strategist],
+        coding_agent=coding_agent,
         results_dir=results_dir
     )
 
     # Run autonomous experiment
     print("🚀 Starting autonomous experiment...\n")
-    print("The agents will now:")
-    print("  1. Plan their approach")
-    print("  2. Write code")
+    print("The workflow:")
+    print("  1. Strategy team discusses what to implement")
+    print("  2. Research Engineer translates discussion into code")
     print("  3. Execute and analyze results")
     print("  4. Evolve when stuck")
     print("  5. Iterate until goal achieved\n")

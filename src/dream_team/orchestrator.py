@@ -24,6 +24,7 @@ class ExperimentOrchestrator:
         self,
         team_lead: Agent,
         team_members: List[Agent],
+        coding_agent: Agent,
         results_dir: Path,
         evolution_engine: Optional[EvolutionEngine] = None
     ):
@@ -32,12 +33,14 @@ class ExperimentOrchestrator:
 
         Args:
             team_lead: Lead agent who coordinates
-            team_members: Other agents on the team
+            team_members: Other agents on the team (strategists, domain experts)
+            coding_agent: Dedicated agent who implements code based on team discussions
             results_dir: Directory to save results
             evolution_engine: Engine for agent evolution
         """
         self.team_lead = team_lead
         self.team_members = team_members
+        self.coding_agent = coding_agent
         self.all_agents = [team_lead] + team_members
         self.results_dir = Path(results_dir)
         self.results_dir.mkdir(parents=True, exist_ok=True)
@@ -190,11 +193,8 @@ class ExperimentOrchestrator:
 
             history_context = f"\n## Previous Iteration:\nApproach: {last['approach'][:200]}...\nMetrics: {last['metrics']}{output_preview}\n"
 
-        # Build team member list
-        team_list = [self.team_lead.title] + [m.title for m in self.team_members]
-
         agenda = f"""
-**BE CONCISE.** Plan what code to write for this iteration.
+**BE CONCISE.** Decide what to implement this iteration.
 
 ## Problem:
 {problem_statement}
@@ -204,13 +204,11 @@ class ExperimentOrchestrator:
 
 {history_context}
 
-## Team Members:
-{', '.join(team_list)}
-
 ## Your Task:
-In 2-3 sentences:
-1. What code needs to be written this iteration?
-2. WHO will write it? (specify team member by title)
+In 2-3 sentences, describe what needs to be implemented this iteration.
+Focus on WHAT to do, not HOW to code it.
+
+A coding agent will receive your discussion and implement it.
 
 Keep your response SHORT and ACTION-ORIENTED.
 """
@@ -225,58 +223,35 @@ Keep your response SHORT and ACTION-ORIENTED.
 
         return summary
 
-    def _select_implementer(self, approach: str) -> Agent:
-        """
-        Select which agent should implement the approach.
-
-        Searches the approach text for agent titles to determine who was assigned.
-        Falls back to first team member if no explicit assignment found.
-        """
-        approach_lower = approach.lower()
-
-        # Check each agent's title in the approach text
-        for agent in self.all_agents:
-            # Look for exact title match (case-insensitive)
-            if agent.title.lower() in approach_lower:
-                print(f"   Assigned to: {agent.title}\n")
-                return agent
-
-        # Fallback: use first team member or team lead
-        fallback = self.team_members[0] if self.team_members else self.team_lead
-        print(f"   No explicit assignment found, defaulting to: {fallback.title}\n")
-        return fallback
-
     def _implement_approach(self, approach: str) -> str:
-        """Have an agent write code to implement the approach"""
-        print("💻 Implementing approach...\n")
-
-        # Try to identify who should implement from the approach description
-        implementer = self._select_implementer(approach)
+        """Have coding agent write code to implement the approach"""
+        print(f"💻 {self.coding_agent.title} implementing approach...\n")
 
         task = f"""
-Write Python code to implement this approach:
+The team has discussed what to implement. Write Python code to implement their plan.
 
+## Team's Discussion:
 {approach}
 
-Available in execution context:
+## Available in execution context:
 - Libraries: pandas (pd), numpy (np), pathlib.Path
 - Variables: {list(self.executor.data_context.keys())}
   (You can use any of these variables directly in your code)
 
-Requirements:
-- Write complete, executable Python code
+## Requirements:
+- Write complete, executable Python code that implements what the team discussed
 - Include print statements for key results
 - Store metrics in variables (e.g., mae, cv_scores, f1_score)
-- You can create new variables that will persist to next iteration
+- Variables you create will persist to the next iteration
 
 Output ONLY the Python code, wrapped in ```python code blocks.
 """
 
         meeting = IndividualMeeting(save_dir=str(self.results_dir / 'meetings'))
         code_output = meeting.run(
-            agent=implementer,
+            agent=self.coding_agent,
             task=task,
-            num_iterations=1  # No iteration for now, just generate code
+            num_iterations=1
         )
 
         # Extract code from output
@@ -361,7 +336,7 @@ Output ONLY the Python code, wrapped in ```python code blocks.
 
     def _fix_code_error(self, failed_code: str, error: str, traceback: str, approach: str) -> str:
         """
-        Ask agent to fix code that failed execution.
+        Ask coding agent to fix code that failed execution.
 
         Args:
             failed_code: The code that failed
@@ -372,8 +347,7 @@ Output ONLY the Python code, wrapped in ```python code blocks.
         Returns:
             Fixed code
         """
-        # Use same agent who wrote the original code
-        implementer = self._select_implementer(approach)
+        print(f"   🔧 {self.coding_agent.title} fixing error...\n")
 
         task = f"""
 Your code failed with an error. Fix it.
@@ -405,7 +379,7 @@ Output ONLY the FIXED Python code, wrapped in ```python code blocks.
 
         meeting = IndividualMeeting(save_dir=str(self.results_dir / 'meetings'))
         code_output = meeting.run(
-            agent=implementer,
+            agent=self.coding_agent,
             task=task,
             num_iterations=1
         )
