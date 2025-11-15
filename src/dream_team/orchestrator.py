@@ -177,7 +177,18 @@ class ExperimentOrchestrator:
         history_context = ""
         if self.experiment_history:
             last = self.experiment_history[-1]
-            history_context = f"\n## Previous Iteration:\nApproach: {last['approach'][:200]}...\nMetrics: {last['metrics']}\n"
+
+            # Build history context with output from previous iteration
+            output_preview = ""
+            if last['results'].get('output'):
+                # Show last 1000 chars of output (most recent results)
+                output = last['results']['output']
+                if len(output) > 1000:
+                    output_preview = f"\n\nOutput (last 1000 chars):\n```\n...{output[-1000:]}\n```"
+                else:
+                    output_preview = f"\n\nOutput:\n```\n{output}\n```"
+
+            history_context = f"\n## Previous Iteration:\nApproach: {last['approach'][:200]}...\nMetrics: {last['metrics']}{output_preview}\n"
 
         agenda = f"""
 **BE CONCISE.** Plan what code to write for this iteration.
@@ -221,12 +232,16 @@ Write Python code to implement this approach:
 
 {approach}
 
+Available in execution context:
+- Libraries: pandas (pd), numpy (np), pathlib.Path
+- Variables: {list(self.executor.data_context.keys())}
+  (You can use any of these variables directly in your code)
+
 Requirements:
-- Use pandas (pd), numpy (np) available in scope
-- Available data: {list(self.executor.data_context.keys())}
 - Write complete, executable Python code
 - Include print statements for key results
-- Store final metrics in variables (e.g., mae, cv_scores, f1_score)
+- Store metrics in variables (e.g., mae, cv_scores, f1_score)
+- You can create new variables that will persist to next iteration
 
 Output ONLY the Python code, wrapped in ```python code blocks.
 """
