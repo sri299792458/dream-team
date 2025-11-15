@@ -121,8 +121,7 @@ src/dream_team/
 experiments/agentds_food/
 ├── data/                        # Benchmark data
 ├── results/                     # Evolution history, meetings, experiments
-├── notebooks/                   # Guided mode notebooks
-└── run_autonomous_experiment.py # Autonomous mode script
+└── run_autonomous_experiment.py # Fully autonomous experiment
 ```
 
 ## Installation
