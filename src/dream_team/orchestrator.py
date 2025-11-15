@@ -313,15 +313,28 @@ Format your response as a simple list, one team member per line.
             print(f"   - {agent.title}")
 
         # Save bootstrap results
+        # Use structure compatible with regular iterations so team can see bootstrap output
         bootstrap_summary = {
             'iteration': 0,
             'phase': 'bootstrap',
-            'exploration_plan': exploration_plan,
-            'exploration_code': code,
-            'exploration_output': results['output'] if results['success'] else results['error'],
+            'approach': exploration_plan,  # What was planned
+            'results': {  # Match iteration structure so meeting code works
+                'success': results['success'],
+                'output': results['output'] if results['success'] else results.get('error', ''),
+                'error': results.get('error'),
+                'traceback': results.get('traceback'),
+                'code': code,
+                'description': 'Bootstrap exploration'
+            },
+            'metrics': {},  # No metrics in bootstrap, but include empty dict for consistency
+            'agents_snapshot': [self.team_lead.title, self.coding_agent.title],
             'recruitment_plan': recruitment_plan,
             'recruited_agents': [{'title': a.title, 'expertise': a.expertise} for a in recruited_agents]
         }
+
+        # Add to experiment history so iteration 1 can see bootstrap output!
+        self.experiment_history.append(bootstrap_summary)
+
         save_json(bootstrap_summary, self.results_dir / 'iteration_00_bootstrap.json')
 
     def _parse_and_recruit(self, recruitment_plan: str) -> List[Agent]:
