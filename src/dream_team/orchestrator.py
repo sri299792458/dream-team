@@ -24,6 +24,7 @@ class ExperimentOrchestrator:
         self,
         team_lead: Agent,
         team_members: List[Agent],
+        coding_agent: Agent,
         results_dir: Path,
         evolution_engine: Optional[EvolutionEngine] = None
     ):
@@ -32,12 +33,14 @@ class ExperimentOrchestrator:
 
         Args:
             team_lead: Lead agent who coordinates
-            team_members: Other agents on the team
+            team_members: Other agents on the team (strategists, domain experts)
+            coding_agent: Dedicated agent who implements code based on team discussions
             results_dir: Directory to save results
             evolution_engine: Engine for agent evolution
         """
         self.team_lead = team_lead
-        self.team_members = team_members
+        self.team_members = team_members  # Can be empty initially - PI recruits after bootstrap
+        self.coding_agent = coding_agent
         self.all_agents = [team_lead] + team_members
         self.results_dir = Path(results_dir)
         self.results_dir.mkdir(parents=True, exist_ok=True)
@@ -49,6 +52,7 @@ class ExperimentOrchestrator:
         self.iteration = 0
         self.experiment_history = []
         self.best_metric = None
+        self.bootstrap_completed = len(team_members) > 0  # Skip bootstrap if team already exists
 
     def run(
         self,
@@ -97,6 +101,15 @@ class ExperimentOrchestrator:
                 print(f"\n✅ Resumed from iteration {self.iteration}")
                 print(f"   Best {target_metric} so far: {self.best_metric}")
                 print(f"   Starting iteration {start_iteration}\n")
+                # If resumed, bootstrap already completed
+                self.bootstrap_completed = True
+
+        # Bootstrap phase: PI explores problem and recruits team
+        if not self.bootstrap_completed:
+            self._bootstrap_exploration(problem_statement)
+            self.bootstrap_completed = True
+            print("\n" + "="*60)
+            print("Bootstrap complete. Starting team iterations...\n")
 
         # Main iteration loop
         for self.iteration in range(start_iteration, max_iterations + 1):
@@ -110,8 +123,8 @@ class ExperimentOrchestrator:
             # Step 2: Agent implements the approach (writes code)
             implementation = self._implement_approach(approach)
 
-            # Step 3: Execute code and get results
-            results = self._execute_implementation(implementation)
+            # Step 3: Execute code and get results (with automatic error recovery)
+            results = self._execute_with_retry(implementation, approach, max_retries=2)
 
             # Step 4: Evaluate performance
             metrics = self._extract_metrics(results, target_metric)
@@ -169,6 +182,181 @@ class ExperimentOrchestrator:
 
         return final_summary
 
+    def _bootstrap_exploration(self, problem_statement: str):
+        """
+        Bootstrap phase: PI explores problem and recruits team.
+
+        The PI (team lead) starts alone, explores the data with coding agent,
+        sees what the problem is about, then decides what expertise is needed
+        and recruits team members.
+        """
+        print("\n" + "="*60)
+        print("BOOTSTRAP: PI Initial Exploration")
+        print("="*60)
+        print(f"\n{self.team_lead.title} is exploring the problem alone...\n")
+
+        # PI decides what initial exploration is needed
+        exploration_task = f"""
+You've received a new research problem. Before assembling a team, you need to understand what you're dealing with.
+
+## Problem:
+{problem_statement}
+
+## Available Data:
+{list(self.executor.data_context.keys())}
+
+## Your Task:
+Decide what initial exploration will help you understand:
+1. What the data looks like (schemas, sizes, distributions)
+2. What the challenge involves
+3. What expertise you'll need on your team
+
+In 2-3 sentences, describe what exploration code should be written.
+"""
+
+        meeting = IndividualMeeting(save_dir=str(self.results_dir / 'meetings'))
+        exploration_plan = meeting.run(
+            agent=self.team_lead,
+            task=exploration_task,
+            num_iterations=1
+        )
+
+        print(f"\n{self.team_lead.title}'s exploration plan:\n{exploration_plan}\n")
+
+        # Coding agent implements exploration
+        print(f"💻 {self.coding_agent.title} implementing exploration...\n")
+
+        code_task = f"""
+The PI wants to do initial exploration. Write Python code to implement this:
+
+## PI's Request:
+{exploration_plan}
+
+## Available in execution context:
+- Libraries: pandas (pd), numpy (np), pathlib.Path
+- Variables: {list(self.executor.data_context.keys())}
+
+## Requirements:
+- Write exploratory code (e.g., .info(), .head(), .describe(), basic stats)
+- Include clear print statements showing what you find
+- Focus on understanding data structure and the problem
+
+Output ONLY the Python code, wrapped in ```python code blocks.
+"""
+
+        code_meeting = IndividualMeeting(save_dir=str(self.results_dir / 'meetings'))
+        code_output = code_meeting.run(
+            agent=self.coding_agent,
+            task=code_task,
+            num_iterations=1
+        )
+
+        code = extract_code_from_text(code_output)
+
+        # Execute exploration
+        print("⚙️  Executing exploration...\n")
+        results = self.executor.execute(code, description="Bootstrap exploration")
+
+        if results['success']:
+            print("✅ Exploration successful!\n")
+            print("Output:")
+            print("-" * 60)
+            print(results['output'])
+            print("-" * 60)
+        else:
+            print("❌ Exploration failed:")
+            print(results['error'])
+            # Continue anyway - PI can recruit based on problem statement
+
+        # PI reviews results and recruits team
+        print(f"\n{self.team_lead.title} reviewing exploration results and recruiting team...\n")
+
+        recruitment_task = f"""
+Based on the problem and exploration results, decide what expertise you need on your team.
+
+## Problem:
+{problem_statement}
+
+## Exploration Results:
+{results['output'][:2000] if results['success'] else "Exploration failed, but you have the problem statement."}
+
+## Your Task:
+List 1-3 team members you want to recruit. For each, provide:
+- Title (e.g., "ML Strategist", "Domain Expert", "Data Analyst")
+- Expertise (what they should know)
+- Role (what they'll contribute)
+
+Be specific about the skills needed based on what you learned.
+
+Format your response as a simple list, one team member per line.
+"""
+
+        recruitment_meeting = IndividualMeeting(save_dir=str(self.results_dir / 'meetings'))
+        recruitment_plan = recruitment_meeting.run(
+            agent=self.team_lead,
+            task=recruitment_task,
+            num_iterations=1
+        )
+
+        print(f"Recruitment plan:\n{recruitment_plan}\n")
+
+        # Parse and create team members from PI's plan
+        # For now, create ML Strategist as default (user can extend this)
+        # In future, could use LLM to parse and create custom agents
+        recruited_agents = self._parse_and_recruit(recruitment_plan)
+
+        self.team_members.extend(recruited_agents)
+        self.all_agents = [self.team_lead] + self.team_members
+
+        print(f"\n✅ Team assembled! {len(recruited_agents)} member(s) recruited:")
+        for agent in recruited_agents:
+            print(f"   - {agent.title}")
+
+        # Save bootstrap results
+        # Use structure compatible with regular iterations so team can see bootstrap output
+        bootstrap_summary = {
+            'iteration': 0,
+            'phase': 'bootstrap',
+            'approach': exploration_plan,  # What was planned
+            'results': {  # Match iteration structure so meeting code works
+                'success': results['success'],
+                'output': results['output'] if results['success'] else results.get('error', ''),
+                'error': results.get('error'),
+                'traceback': results.get('traceback'),
+                'code': code,
+                'description': 'Bootstrap exploration'
+            },
+            'metrics': {},  # No metrics in bootstrap, but include empty dict for consistency
+            'agents_snapshot': [self.team_lead.title, self.coding_agent.title],
+            'recruitment_plan': recruitment_plan,
+            'recruited_agents': [{'title': a.title, 'expertise': a.expertise} for a in recruited_agents]
+        }
+
+        # Add to experiment history so iteration 1 can see bootstrap output!
+        self.experiment_history.append(bootstrap_summary)
+
+        save_json(bootstrap_summary, self.results_dir / 'iteration_00_bootstrap.json')
+
+    def _parse_and_recruit(self, recruitment_plan: str) -> List[Agent]:
+        """
+        Parse PI's recruitment plan and create agents.
+
+        For now, creates a default ML Strategist.
+        Future: Use LLM to parse plan and create custom agents.
+        """
+        # Simple heuristic: if PI mentions ML/machine learning, add ML Strategist
+        # If mentions domain/food/chemistry, could add domain expert
+        # For now, default to ML Strategist
+
+        ml_strategist = Agent(
+            title="ML Strategist",
+            expertise="machine learning algorithms, feature engineering, model selection, predictive modeling",
+            goal="design effective predictive approaches based on data characteristics",
+            role="propose modeling strategies and analytical approaches"
+        )
+
+        return [ml_strategist]
+
     def _team_planning_meeting(self, problem_statement: str) -> str:
         """Run team meeting to plan approach"""
         print("👥 Team planning meeting...\n")
@@ -177,10 +365,21 @@ class ExperimentOrchestrator:
         history_context = ""
         if self.experiment_history:
             last = self.experiment_history[-1]
-            history_context = f"\n## Previous Iteration:\nApproach: {last['approach'][:200]}...\nMetrics: {last['metrics']}\n"
+
+            # Build history context with output from previous iteration
+            output_preview = ""
+            if last['results'].get('output'):
+                # Show last 1000 chars of output (most recent results)
+                output = last['results']['output']
+                if len(output) > 1000:
+                    output_preview = f"\n\nOutput (last 1000 chars):\n```\n...{output[-1000:]}\n```"
+                else:
+                    output_preview = f"\n\nOutput:\n```\n{output}\n```"
+
+            history_context = f"\n## Previous Iteration:\nApproach: {last['approach'][:200]}...\nMetrics: {last['metrics']}{output_preview}\n"
 
         agenda = f"""
-Plan the next iteration for this challenge.
+**BE CONCISE.** Decide what to implement this iteration.
 
 ## Problem:
 {problem_statement}
@@ -190,13 +389,13 @@ Plan the next iteration for this challenge.
 
 {history_context}
 
-## Task:
-Decide what to implement in this iteration. Your response should describe:
-1. What analysis or modeling approach to try
-2. Key steps to take
-3. What code needs to be written
+## Your Task:
+In 2-3 sentences, describe what needs to be implemented this iteration.
+Focus on WHAT to do, not HOW to code it.
 
-Be specific and actionable.
+A coding agent will receive your discussion and implement it.
+
+Keep your response SHORT and ACTION-ORIENTED.
 """
 
         meeting = TeamMeeting(save_dir=str(self.results_dir / 'meetings'))
@@ -204,39 +403,40 @@ Be specific and actionable.
             team_lead=self.team_lead,
             team_members=self.team_members,
             agenda=agenda,
-            num_rounds=2
+            num_rounds=1  # Reduced from 2 to 1 for speed
         )
 
         return summary
 
     def _implement_approach(self, approach: str) -> str:
-        """Have an agent write code to implement the approach"""
-        print("💻 Implementing approach...\n")
-
-        # Choose the most relevant agent (for now, use first team member)
-        # TODO: Could use LLM to select best agent for task
-        implementer = self.team_members[0] if self.team_members else self.team_lead
+        """Have coding agent write code to implement the approach"""
+        print(f"💻 {self.coding_agent.title} implementing approach...\n")
 
         task = f"""
-Write Python code to implement this approach:
+The team has discussed what to implement. Write Python code to implement their plan.
 
+## Team's Discussion:
 {approach}
 
-Requirements:
-- Use pandas (pd), numpy (np) available in scope
-- Available data: {list(self.executor.data_context.keys())}
-- Write complete, executable Python code
+## Available in execution context:
+- Libraries: pandas (pd), numpy (np), pathlib.Path
+- Variables: {list(self.executor.data_context.keys())}
+  (You can use any of these variables directly in your code)
+
+## Requirements:
+- Write complete, executable Python code that implements what the team discussed
 - Include print statements for key results
-- Store final metrics in variables (e.g., mae, cv_scores, f1_score)
+- Store metrics in variables (e.g., mae, cv_scores, f1_score)
+- Variables you create will persist to the next iteration
 
 Output ONLY the Python code, wrapped in ```python code blocks.
 """
 
         meeting = IndividualMeeting(save_dir=str(self.results_dir / 'meetings'))
         code_output = meeting.run(
-            agent=implementer,
+            agent=self.coding_agent,
             task=task,
-            num_iterations=1  # No iteration for now, just generate code
+            num_iterations=1
         )
 
         # Extract code from output
@@ -266,23 +466,144 @@ Output ONLY the Python code, wrapped in ```python code blocks.
 
         return result
 
-    def _extract_metrics(self, results: Dict[str, Any], target_metric: str) -> Dict[str, float]:
-        """Extract metrics from execution results"""
-        metrics = results.get('metrics', {})
+    def _execute_with_retry(self, code: str, approach: str, max_retries: int = 2) -> Dict[str, Any]:
+        """
+        Execute code with automatic error recovery.
 
-        # Try to find target metric in variables
+        If execution fails, give the error to the agent and ask for a fix.
+        Retry up to max_retries times.
+
+        Args:
+            code: Initial code to execute
+            approach: The approach description (for context)
+            max_retries: Maximum number of retry attempts
+
+        Returns:
+            Execution results (final attempt)
+        """
+        current_code = code
+        attempt = 0
+
+        while attempt <= max_retries:
+            if attempt > 0:
+                print(f"   🔄 Retry attempt {attempt}/{max_retries}\n")
+
+            # Execute code
+            result = self._execute_implementation(current_code)
+
+            # If successful, return
+            if result['success']:
+                if attempt > 0:
+                    print(f"   ✅ Fixed after {attempt} attempt(s)!\n")
+                return result
+
+            # If failed and we have retries left, ask agent to fix
+            if attempt < max_retries:
+                print(f"   🔧 Asking agent to fix the error...\n")
+                current_code = self._fix_code_error(
+                    failed_code=current_code,
+                    error=result['error'],
+                    traceback=result.get('traceback', ''),
+                    approach=approach
+                )
+
+                # Save the fixed code attempt
+                code_file = self.results_dir / 'code' / f'iteration_{self.iteration:02d}_retry_{attempt+1}.py'
+                code_file.parent.mkdir(exist_ok=True)
+                code_file.write_text(current_code)
+                print(f"   Fixed code saved to: {code_file}\n")
+
+            attempt += 1
+
+        # Max retries exhausted, return last failed result
+        print(f"   ⚠️ Max retries ({max_retries}) exhausted. Moving on with failure.\n")
+        return result
+
+    def _fix_code_error(self, failed_code: str, error: str, traceback: str, approach: str) -> str:
+        """
+        Ask coding agent to fix code that failed execution.
+
+        Args:
+            failed_code: The code that failed
+            error: Error message
+            traceback: Full traceback
+            approach: Original approach description
+
+        Returns:
+            Fixed code
+        """
+        print(f"   🔧 {self.coding_agent.title} fixing error...\n")
+
+        task = f"""
+Your code failed with an error. Fix it.
+
+## Original Approach
+{approach}
+
+## Your Code That Failed
+```python
+{failed_code}
+```
+
+## Error
+{error}
+
+## Traceback
+{traceback}
+
+## Task
+Analyze the error and fix the code. Common issues:
+- Missing imports
+- Incorrect variable names
+- Data type mismatches
+- Index errors
+- Division by zero
+
+Output ONLY the FIXED Python code, wrapped in ```python code blocks.
+"""
+
+        meeting = IndividualMeeting(save_dir=str(self.results_dir / 'meetings'))
+        code_output = meeting.run(
+            agent=self.coding_agent,
+            task=task,
+            num_iterations=1
+        )
+
+        # Extract fixed code
+        fixed_code = extract_code_from_text(code_output)
+
+        return fixed_code
+
+    def _extract_metrics(self, results: Dict[str, Any], target_metric: str) -> Dict[str, float]:
+        """Extract metrics from execution results, ensuring JSON-serializable values only"""
+        raw_metrics = results.get('metrics', {})
+
+        # Filter to only keep JSON-serializable numeric values
+        metrics = {}
+        for key, value in raw_metrics.items():
+            try:
+                # Only keep simple numeric types
+                if isinstance(value, (int, float, np.integer, np.floating)):
+                    metrics[key] = float(value)
+                elif isinstance(value, (list, np.ndarray)):
+                    # For arrays, take the mean
+                    metrics[key] = float(np.mean(value))
+            except (TypeError, ValueError, AttributeError):
+                # Skip non-numeric or non-serializable values
+                pass
+
+        # Try to find target metric in variables if not in metrics
         if target_metric not in metrics:
             for key, value in results.get('variables', {}).items():
                 if target_metric in key.lower():
                     try:
                         # Handle arrays (take mean)
                         if hasattr(value, '__iter__') and not isinstance(value, str):
-                            import numpy as np
                             metrics[target_metric] = float(np.mean(value))
                         else:
                             metrics[target_metric] = float(value)
                         break
-                    except (TypeError, ValueError):
+                    except (TypeError, ValueError, AttributeError):
                         pass
 
         return metrics
