@@ -22,6 +22,7 @@ from .meetings import TeamMeeting, IndividualMeeting
 from .executor import CodeExecutor, extract_code_from_text
 from .orchestrator import ExperimentOrchestrator
 from .utils import save_json, load_json, load_summaries
+from .serialization import RobustJSONEncoder, robust_dump, robust_dumps
 
 __version__ = "0.1.0"
 
@@ -47,4 +48,7 @@ __all__ = [
     "save_json",
     "load_json",
     "load_summaries",
+    "RobustJSONEncoder",
+    "robust_dump",
+    "robust_dumps",
 ]
