@@ -110,8 +110,8 @@ class ExperimentOrchestrator:
             # Step 2: Agent implements the approach (writes code)
             implementation = self._implement_approach(approach)
 
-            # Step 3: Execute code and get results
-            results = self._execute_implementation(implementation)
+            # Step 3: Execute code and get results (with automatic error recovery)
+            results = self._execute_with_retry(implementation, approach, max_retries=2)
 
             # Step 4: Evaluate performance
             metrics = self._extract_metrics(results, target_metric)
@@ -265,6 +265,115 @@ Output ONLY the Python code, wrapped in ```python code blocks.
             print(f"   Traceback:\n{result['traceback']}\n")
 
         return result
+
+    def _execute_with_retry(self, code: str, approach: str, max_retries: int = 2) -> Dict[str, Any]:
+        """
+        Execute code with automatic error recovery.
+
+        If execution fails, give the error to the agent and ask for a fix.
+        Retry up to max_retries times.
+
+        Args:
+            code: Initial code to execute
+            approach: The approach description (for context)
+            max_retries: Maximum number of retry attempts
+
+        Returns:
+            Execution results (final attempt)
+        """
+        current_code = code
+        attempt = 0
+
+        while attempt <= max_retries:
+            if attempt > 0:
+                print(f"   🔄 Retry attempt {attempt}/{max_retries}\n")
+
+            # Execute code
+            result = self._execute_implementation(current_code)
+
+            # If successful, return
+            if result['success']:
+                if attempt > 0:
+                    print(f"   ✅ Fixed after {attempt} attempt(s)!\n")
+                return result
+
+            # If failed and we have retries left, ask agent to fix
+            if attempt < max_retries:
+                print(f"   🔧 Asking agent to fix the error...\n")
+                current_code = self._fix_code_error(
+                    failed_code=current_code,
+                    error=result['error'],
+                    traceback=result.get('traceback', ''),
+                    approach=approach
+                )
+
+                # Save the fixed code attempt
+                code_file = self.results_dir / 'code' / f'iteration_{self.iteration:02d}_retry_{attempt+1}.py'
+                code_file.parent.mkdir(exist_ok=True)
+                code_file.write_text(current_code)
+                print(f"   Fixed code saved to: {code_file}\n")
+
+            attempt += 1
+
+        # Max retries exhausted, return last failed result
+        print(f"   ⚠️ Max retries ({max_retries}) exhausted. Moving on with failure.\n")
+        return result
+
+    def _fix_code_error(self, failed_code: str, error: str, traceback: str, approach: str) -> str:
+        """
+        Ask agent to fix code that failed execution.
+
+        Args:
+            failed_code: The code that failed
+            error: Error message
+            traceback: Full traceback
+            approach: Original approach description
+
+        Returns:
+            Fixed code
+        """
+        # Choose the most relevant agent (for now, use first team member)
+        implementer = self.team_members[0] if self.team_members else self.team_lead
+
+        task = f"""
+Your code failed with an error. Fix it.
+
+## Original Approach
+{approach}
+
+## Your Code That Failed
+```python
+{failed_code}
+```
+
+## Error
+{error}
+
+## Traceback
+{traceback}
+
+## Task
+Analyze the error and fix the code. Common issues:
+- Missing imports
+- Incorrect variable names
+- Data type mismatches
+- Index errors
+- Division by zero
+
+Output ONLY the FIXED Python code, wrapped in ```python code blocks.
+"""
+
+        meeting = IndividualMeeting(save_dir=str(self.results_dir / 'meetings'))
+        code_output = meeting.run(
+            agent=implementer,
+            task=task,
+            num_iterations=1
+        )
+
+        # Extract fixed code
+        fixed_code = extract_code_from_text(code_output)
+
+        return fixed_code
 
     def _extract_metrics(self, results: Dict[str, Any], target_metric: str) -> Dict[str, float]:
         """Extract metrics from execution results, ensuring JSON-serializable values only"""
