@@ -370,9 +370,9 @@ Format your response as a simple list, one team member per line.
 
         ml_strategist = Agent(
             title="ML Strategist",
-            expertise="machine learning algorithms, feature engineering, model selection, predictive modeling",
-            goal="design effective predictive approaches based on data characteristics",
-            role="propose modeling strategies and analytical approaches"
+            expertise="machine learning algorithms, feature engineering, model selection, predictive modeling, research literature in ML/AI, state-of-the-art methods",
+            goal="design evidence-based predictive approaches grounded in research and best practices",
+            role="propose modeling strategies with citations to relevant research when appropriate"
         )
 
         return [ml_strategist]
@@ -398,27 +398,6 @@ Format your response as a simple list, one team member per line.
 
             history_context = f"\n## Previous Iteration:\nApproach: {last['approach'][:200]}...\nMetrics: {last['metrics']}{output_preview}\n"
 
-        # Fetch relevant research papers for context
-        research_context = ""
-        if self.iteration == 1:
-            # First iteration: get foundational papers
-            print("📚 Fetching relevant research papers...\n")
-            try:
-                papers = self.research.research_topic(
-                    query=problem_statement[:200],
-                    context="Looking for foundational methods and approaches",
-                    num_papers=3
-                )
-                if papers:
-                    research_context = "\n## Relevant Research:\n"
-                    for i, paper in enumerate(papers, 1):
-                        research_context += f"{i}. {paper.get('title', 'Unknown')} ({paper.get('year', 'N/A')})\n"
-                        if paper.get('abstract'):
-                            research_context += f"   {paper['abstract'][:150]}...\n"
-                    research_context += "\n"
-            except Exception as e:
-                print(f"   Note: Research search failed: {e}\n")
-
         agenda = f"""
 **BE CONCISE.** Decide what to implement this iteration.
 
@@ -430,11 +409,16 @@ Format your response as a simple list, one team member per line.
 
 {history_context}
 
-{research_context}
+## Your Role:
+You are world-class experts in your fields. When suggesting approaches:
+- Ground your recommendations in established research and methods
+- Cite relevant papers/techniques when appropriate (e.g., "Smith et al. 2023 showed...")
+- Leverage your deep expertise to propose evidence-based solutions
 
 ## Your Task:
 In 2-3 sentences, describe what needs to be implemented this iteration.
 Focus on WHAT to do, not HOW to code it.
+Ground your suggestions in your expertise and cite research when relevant.
 
 A coding agent will receive your discussion and implement it.
 
