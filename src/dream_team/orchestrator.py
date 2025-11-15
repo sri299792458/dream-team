@@ -7,13 +7,14 @@ Coordinates agents, code execution, and iterative improvement.
 from typing import List, Dict, Any, Optional
 from pathlib import Path
 import pandas as pd
+import numpy as np
 
 from .agent import Agent
 from .executor import CodeExecutor, extract_code_from_text
 from .meetings import TeamMeeting, IndividualMeeting
 from .evolution import EvolutionEngine, EvolutionTrigger
 from .research import get_research_assistant
-from .utils import save_json
+from .utils import save_json, load_json
 
 
 class ExperimentOrchestrator:
@@ -56,7 +57,8 @@ class ExperimentOrchestrator:
         target_metric: str,
         minimize_metric: bool = True,
         max_iterations: int = 5,
-        target_score: Optional[float] = None
+        target_score: Optional[float] = None,
+        resume: bool = True
     ) -> Dict[str, Any]:
         """
         Run autonomous experimentation.
@@ -68,6 +70,7 @@ class ExperimentOrchestrator:
             minimize_metric: Whether lower is better
             max_iterations: Maximum iterations before stopping
             target_score: Optional target score to achieve
+            resume: Whether to resume from previous checkpoint (default: True)
 
         Returns:
             Final experiment summary
@@ -85,8 +88,18 @@ class ExperimentOrchestrator:
         # Initialize executor with data
         self.executor = CodeExecutor(data_context=data_context)
 
+        # Check for resume
+        start_iteration = 1
+        if resume:
+            resumed = self._try_resume(problem_statement, target_metric, minimize_metric)
+            if resumed:
+                start_iteration = self.iteration + 1
+                print(f"\n✅ Resumed from iteration {self.iteration}")
+                print(f"   Best {target_metric} so far: {self.best_metric}")
+                print(f"   Starting iteration {start_iteration}\n")
+
         # Main iteration loop
-        for self.iteration in range(1, max_iterations + 1):
+        for self.iteration in range(start_iteration, max_iterations + 1):
             print(f"\n{'='*60}")
             print(f"ITERATION {self.iteration}/{max_iterations}")
             print(f"{'='*60}\n")
@@ -104,10 +117,20 @@ class ExperimentOrchestrator:
             metrics = self._extract_metrics(results, target_metric)
 
             # Step 5: Record iteration
+            # Extract only serializable parts of results
+            serializable_results = {
+                'success': results['success'],
+                'output': results['output'],
+                'error': results.get('error'),
+                'traceback': results.get('traceback'),
+                'code': results['code'],
+                'description': results['description']
+            }
+
             iteration_summary = {
                 'iteration': self.iteration,
                 'approach': approach,
-                'results': results,
+                'results': serializable_results,
                 'metrics': metrics,
                 'agents_snapshot': [a.title for a in self.all_agents]
             }
@@ -367,6 +390,87 @@ Output ONLY the Python code, wrapped in ```python code blocks.
         elif not minimize and current > self.best_metric:
             self.best_metric = current
             print(f"\n✨ New best {target_metric}: {current:.4f}")
+
+    def _try_resume(self, problem_statement: str, target_metric: str, minimize: bool) -> bool:
+        """
+        Try to resume from previous experiment.
+
+        Returns: True if resumed, False if starting fresh
+        """
+        # Check if there are any iteration files
+        iteration_files = sorted(self.results_dir.glob('iteration_*.json'))
+
+        if not iteration_files:
+            print("📝 No previous experiment found. Starting fresh.\n")
+            return False
+
+        print(f"🔄 Found previous experiment with {len(iteration_files)} iterations")
+        print("   Resuming from checkpoint...\n")
+
+        # Load all iteration summaries
+        for iter_file in iteration_files:
+            iteration_data = load_json(iter_file)
+            self.experiment_history.append(iteration_data)
+
+            # Update iteration counter
+            self.iteration = iteration_data['iteration']
+
+            # Update best metric
+            if 'metrics' in iteration_data and target_metric in iteration_data['metrics']:
+                metric_value = iteration_data['metrics'][target_metric]
+                if self.best_metric is None:
+                    self.best_metric = metric_value
+                elif minimize and metric_value < self.best_metric:
+                    self.best_metric = metric_value
+                elif not minimize and metric_value > self.best_metric:
+                    self.best_metric = metric_value
+
+        # Re-execute all code to rebuild executor state
+        print("   Rebuilding execution context...")
+        code_files = sorted(self.results_dir.glob('code/iteration_*.py'))
+
+        for code_file in code_files:
+            iter_num = int(code_file.stem.split('_')[-1])
+            code = code_file.read_text()
+
+            print(f"   Re-executing iteration {iter_num}...")
+            result = self.executor.execute(
+                code=code,
+                description=f"Resume: Iteration {iter_num}"
+            )
+
+            if not result['success']:
+                print(f"   ⚠️  Warning: Iteration {iter_num} failed on re-execution")
+                print(f"   Error: {result['error']}")
+                # Continue anyway - maybe environment changed
+
+        # Load agent states
+        agent_files = sorted(self.results_dir.glob('agents/*.json'))
+        if agent_files:
+            # Load most recent agent states
+            latest_agents = {}
+            for agent_file in agent_files:
+                # Parse filename to get agent name and iteration
+                parts = agent_file.stem.rsplit('_iter_', 1)
+                if len(parts) == 2:
+                    agent_name = parts[0]
+                    iter_num = int(parts[1])
+
+                    if agent_name not in latest_agents or iter_num > latest_agents[agent_name][1]:
+                        latest_agents[agent_name] = (agent_file, iter_num)
+
+            # Load the latest version of each agent
+            for agent_name, (agent_file, iter_num) in latest_agents.items():
+                # Find matching agent in team
+                for agent in self.all_agents:
+                    if agent.title.lower().replace(" ", "_") == agent_name:
+                        agent.load(agent_file)
+                        print(f"   Loaded {agent.title} (iteration {iter_num})")
+                        break
+
+        print(f"\n   ✅ Successfully resumed from iteration {self.iteration}")
+
+        return True
 
     def _generate_final_summary(self) -> Dict[str, Any]:
         """Generate final experiment summary"""
