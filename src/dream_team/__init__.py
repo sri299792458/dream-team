@@ -11,7 +11,13 @@ This framework enables AI agents to:
 from .agent import Agent, Paper, KnowledgeBase
 from .llm import GeminiLLM, get_llm
 from .research import SemanticScholarAPI, ResearchAssistant, get_research_assistant
-from .evolution import EvolutionEngine, EvolutionTrigger
+from .evolution import (
+    EvolutionEngine,
+    EvolutionTrigger,
+    PerformancePlateauTrigger,
+    ErrorPatternTrigger,
+    KnowledgeGapTrigger
+)
 from .meetings import TeamMeeting, IndividualMeeting
 from .utils import save_json, load_json, load_summaries
 
@@ -28,6 +34,9 @@ __all__ = [
     "get_research_assistant",
     "EvolutionEngine",
     "EvolutionTrigger",
+    "PerformancePlateauTrigger",
+    "ErrorPatternTrigger",
+    "KnowledgeGapTrigger",
     "TeamMeeting",
     "IndividualMeeting",
     "save_json",
