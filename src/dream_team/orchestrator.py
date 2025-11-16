@@ -143,6 +143,16 @@ class ExperimentOrchestrator:
             # Step 5: Evaluate performance
             metrics = self._extract_metrics(results, target_metric)
 
+            # Log extracted metrics
+            print(f"\n📊 METRICS EXTRACTED FROM EXECUTION:")
+            if metrics:
+                for k, v in metrics.items():
+                    print(f"   {k}: {v}")
+            else:
+                print("   ⚠️ WARNING: No metrics extracted!")
+                print(f"   Target metric '{target_metric}' not found in execution output")
+            print()
+
             # Step 6: Record iteration
             # Extract only serializable parts of results
             serializable_results = {
@@ -585,6 +595,13 @@ Only output the agent specifications, nothing else.
             # Extract approach preview to avoid slicing syntax issues in f-string
             approach = last['approach']
             approach_preview = approach[:200] + "..." if len(approach) > 200 else approach
+
+            # Log what metrics PI sees
+            print(f"📈 PI SEES THESE METRICS FROM LAST ITERATION: {last['metrics']}")
+            if not last['metrics']:
+                print("   ⚠️ WARNING: No metrics extracted from last iteration!")
+            print()
+
             history_context = f"\n## Previous Iteration:\nApproach: {approach_preview}\nMetrics: {last['metrics']}{output_preview}\n"
 
         # Each domain expert searches for papers in their field
@@ -722,7 +739,10 @@ Output ONLY the search query (2-5 words).
 
                     if new_papers:
                         all_papers.extend([(agent.title, paper) for paper in new_papers])
-                        print(f"      Found {len(new_papers)} new papers\n")
+                        print(f"      Added to {agent.title}'s knowledge base:")
+                        for paper in new_papers:
+                            print(f"        • {paper.title[:80]}... ({paper.year}, {paper.citation_count} cites)")
+                        print()
                     else:
                         print(f"      Found {len(papers)} papers (all duplicates, skipped)\n")
                 else:
@@ -777,6 +797,14 @@ Team members: Propose what to implement (2-3 sentences), citing YOUR field's res
 Lead: Ask 1-2 questions, then synthesize proposals.
 """
 
+        # Log what the team actually sees
+        print("=" * 60)
+        print("TEAM MEETING AGENDA")
+        print("=" * 60)
+        print(agenda)
+        print("=" * 60)
+        print()
+
         meeting = TeamMeeting(save_dir=str(self.results_dir / 'meetings'))
         summary = meeting.run(
             team_lead=self.team_lead,
@@ -784,6 +812,23 @@ Lead: Ask 1-2 questions, then synthesize proposals.
             agenda=agenda,
             num_rounds=1  # Reduced from 2 to 1 for speed
         )
+
+        print("\n" + "=" * 60)
+        print("TEAM MEETING OUTPUT (what PI synthesized)")
+        print("=" * 60)
+        print(summary)
+        print("=" * 60)
+
+        # Check if team members actually cited their papers
+        print("\n📊 PAPER CITATION CHECK:")
+        for agent in self.team_members:
+            if agent.knowledge_base.papers:
+                print(f"\n{agent.title} has {len(agent.knowledge_base.papers)} papers in knowledge base:")
+                for paper in agent.knowledge_base.papers[:3]:
+                    cited = paper.title[:30] in summary or paper.authors[0] in summary if paper.authors else False
+                    status = "✅ CITED" if cited else "❌ NOT CITED"
+                    print(f"  {status}: {paper.title[:60]}... ({paper.year})")
+        print()
 
         return summary
 
