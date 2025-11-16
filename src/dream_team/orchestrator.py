@@ -606,10 +606,10 @@ The team has discussed what to implement. Write Python code to implement their p
   (You can use any of these variables directly in your code)
 {previous_output_context}
 ## Requirements:
-- Write SELF-CONTAINED code - check what exists before using it:
-  - Variables listed above are available, everything else must be defined or created
-  - If you need a variable that might not exist, check first or recreate it from available data
-  - Import ALL symbols you use from libraries (don't forget constants, classes, functions)
+- Write complete, executable code:
+  - Use variables from "Available in execution context" - they are GUARANTEED to exist
+  - Define any new variables you need
+  - Import ALL symbols you use from libraries (functions, classes, constants)
 - DO NOT make assumptions:
   - Don't assume column names - inspect with df.columns first
   - Don't assume variable names from previous iterations - check what's available above
