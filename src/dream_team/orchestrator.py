@@ -739,7 +739,7 @@ Output ONLY the search query (2-5 words).
             print("   No papers found across all searches\n")
 
         agenda = f"""
-**BE CONCISE.** Decide what to implement this iteration.
+**BE CONCISE.**
 
 ## Problem:
 {problem_statement}
@@ -750,22 +750,15 @@ Output ONLY the search query (2-5 words).
 {history_context}
 {research_context}
 
-## Your Role:
-You are world-class experts in your fields. When suggesting approaches:
-- **Domain Experts**: Reference the domain research YOU searched (shown with your name above)
-  - Apply insights from your field's literature to inform the approach
-  - Cite specific papers that support your recommendations (e.g., "Based on Smith et al. 2023...")
-- **Lead**: Synthesize domain expertise with practical ML implementation
-- Ground ALL recommendations in research evidence, not just intuition
+## Roles:
+- **Team Members**: YOU propose what to implement, citing research from YOUR domain (shown above)
+- **Lead**: Ask questions, then synthesize team proposals into a plan
 
-## Your Task:
-In 2-3 sentences, describe what needs to be implemented this iteration.
+## Task:
+Team members: In 2-3 sentences, propose what should be implemented this iteration based on YOUR field's research.
+Lead: First ask 1-2 questions to guide discussion. After hearing proposals, synthesize into a plan.
+
 Focus on WHAT to do, not HOW to code it.
-Domain experts: cite your field's research. Lead: coordinate the plan.
-
-A coding agent will receive your discussion and implement it.
-
-Keep your response SHORT and ACTION-ORIENTED.
 """
 
         meeting = TeamMeeting(save_dir=str(self.results_dir / 'meetings'))
