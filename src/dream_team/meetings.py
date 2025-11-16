@@ -128,7 +128,14 @@ Keep it concise (1-2 paragraphs).
                 print(f"{response}\n")
 
             # Team lead synthesizes
-            synthesis_prompt = f"""You are synthesizing the team discussion.
+            # Use ReAct loop for final synthesis, simple generation for intermediate rounds
+            if round_num == num_rounds - 1 and self.research_api:
+                # Final synthesis with ReAct
+                context = self._build_context()
+                synthesis = self._react_synthesis(team_lead, agenda, context, temperature)
+            else:
+                # Intermediate synthesis without ReAct
+                synthesis_prompt = f"""You are synthesizing the team discussion.
 
 Agenda: {agenda}
 
@@ -138,11 +145,11 @@ Discussion so far:
 As team lead, synthesize the key points and {'provide final recommendations' if round_num == num_rounds - 1 else 'guide the next round of discussion'}.
 """
 
-            synthesis = self.llm.generate(
-                synthesis_prompt,
-                system_instruction=team_lead.prompt,
-                temperature=temperature * 0.8  # Slightly more focused
-            )
+                synthesis = self.llm.generate(
+                    synthesis_prompt,
+                    system_instruction=team_lead.prompt,
+                    temperature=temperature * 0.8  # Slightly more focused
+                )
 
             self.add_message(team_lead.title, synthesis)
             print(f"💬 {team_lead.title} (synthesis):")
@@ -368,6 +375,118 @@ Focus on methods, findings, or techniques that could be applied."""
 
         except Exception as e:
             return f"Search failed: {e}"
+
+    def _react_synthesis(self, team_lead, agenda: str, context: str, temperature: float, max_steps: int = 2) -> str:
+        """
+        ReAct loop for team lead synthesis: reason and search papers before making final decisions.
+
+        Pattern:
+        1. Thought: Identify team consensus and what decision to make
+        2. Action: Search papers to verify/ground the decision
+        3. Observation: Papers found to support this
+        4. (Repeat to build grounded synthesis)
+        5. Final Answer: Synthesis with final decisions and citations
+
+        IMPORTANT: Papers are for GROUNDING the synthesis, making it evidence-based
+        """
+        print(f"   🧠 {team_lead.title} using ReAct reasoning for synthesis...")
+
+        react_history = []
+
+        for step in range(max_steps):
+            # Thought: Identify consensus and what to decide
+            thought_prompt = f"""You are {team_lead.title} synthesizing the team discussion.
+
+Agenda: {agenda}
+
+Discussion so far:
+{context}
+
+{"Previous reasoning:" if react_history else ""}
+{self._format_react_history(react_history)}
+
+Based on the team's proposals, what is the consensus pointing to? What should the final decision be?
+Think about what decision you're making, then identify what you'd want to search for to verify/ground this decision.
+
+Output format:
+Thought: [What the team consensus is and what decision I'm making]
+Action: Search papers on "[2-4 word search query]" to verify/ground this decision
+
+Be concise. Only output Thought and Action.
+"""
+
+            thought_action = self.llm.generate(
+                thought_prompt,
+                system_instruction=team_lead.prompt,
+                temperature=temperature * 0.8
+            )
+
+            # Parse thought and action
+            thought = ""
+            search_query = ""
+
+            for line in thought_action.split('\n'):
+                if line.startswith('Thought:'):
+                    thought = line.replace('Thought:', '').strip()
+                elif line.startswith('Action:'):
+                    action_text = line.replace('Action:', '').strip()
+                    # Extract query from "Search papers on 'X'" or similar
+                    if '"' in action_text:
+                        search_query = action_text.split('"')[1]
+                    elif "'" in action_text:
+                        search_query = action_text.split("'")[1]
+                    else:
+                        # Fallback: use last few words
+                        words = action_text.split()
+                        search_query = ' '.join(words[-4:]) if len(words) > 4 else action_text
+
+            if not search_query:
+                break  # Stop if can't parse
+
+            print(f"      Step {step+1} Thought: {thought[:80]}...")
+            print(f"      Step {step+1} Action: Search '{search_query}'")
+
+            # Action: Search papers
+            observation = self._search_and_observe(team_lead, search_query)
+
+            print(f"      Step {step+1} Observation: {observation[:100]}...")
+
+            react_history.append({
+                'thought': thought,
+                'action': f"Search papers on '{search_query}'",
+                'observation': observation
+            })
+
+        # Final Answer: Generate synthesis with citations and final decisions
+        final_prompt = f"""You are {team_lead.title} providing the final synthesis.
+
+Agenda: {agenda}
+
+Discussion so far:
+{context}
+
+Your ReAct reasoning process:
+{self._format_react_history(react_history)}
+
+Provide your FINAL SYNTHESIS with DECISIONS based on the team discussion and your reasoning.
+
+IMPORTANT:
+- Make FINAL DECISIONS, do NOT ask clarifying questions
+- Synthesize what the team proposed into a clear action plan
+- Use papers you found as SUPPORTING EVIDENCE to ground your decisions
+- Cite relevant papers to support your recommendations
+- Format citations as: (Author et al., Year)
+
+Keep it focused and decisive (2-3 paragraphs).
+"""
+
+        final_synthesis = self.llm.generate(
+            final_prompt,
+            system_instruction=team_lead.prompt,
+            temperature=temperature * 0.8
+        )
+
+        return final_synthesis
 
     def _search_papers_to_verify(self, agent, draft_proposal: str):
         """Search for papers to verify/support agent's draft proposal"""

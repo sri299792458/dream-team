@@ -627,7 +627,7 @@ Only output the agent specifications, nothing else.
             # Extract approach preview to avoid slicing syntax issues in f-string
             approach = last['approach']
             approach_preview = approach[:200] + "..." if len(approach) > 200 else approach
-            history_context = f"\n## Previous Iteration:\nApproach: {approach_preview}\nMetrics: {last['metrics']}{output_preview}\n"
+            history_context = f"\n## Previous Iteration Results:\nApproach tried: {approach_preview}\nMetrics achieved: {last['metrics']}\n(Note: These are PREVIOUS iteration metrics, not current){output_preview}\n"
 
         # Research context removed - agents now use ReAct loop during meetings
         # They search papers iteratively as they reason about proposals
@@ -654,11 +654,11 @@ Only output the agent specifications, nothing else.
 
 ## Roles:
 - **Team Members**: Propose features using ONLY the columns listed above
-- **Lead**: Ask questions, then synthesize proposals
+- **Lead**: Synthesize proposals into final decisions
 
 ## Task:
 Team members: Propose what to implement based on your expertise (2-3 sentences).
-Lead: Ask 1-2 questions, then synthesize proposals.
+Lead: Synthesize proposals and make FINAL DECISIONS (no questions, just decisions).
 """
 
         # Log agenda summary (not full text - too verbose)
