@@ -94,6 +94,13 @@ class ExperimentOrchestrator:
         print()
 
         # Initialize executor with data
+        # Add artifacts_dir so agents can save important objects
+        artifacts_dir = self.results_dir / 'artifacts'
+        artifacts_dir.mkdir(exist_ok=True)
+        if data_context is None:
+            data_context = {}
+        data_context['artifacts_dir'] = artifacts_dir
+
         self.executor = CodeExecutor(data_context=data_context)
 
         # Store problem statement for use in prompts
@@ -731,6 +738,7 @@ The team has discussed what to implement. Write Python code to implement their p
   - Use variables from "Available in execution context" - they are GUARANTEED to exist
   - Define any new variables you need
   - Import ALL symbols you use from libraries (functions, classes, constants)
+  - Optional: Save large objects to disk (e.g., `joblib.dump(model, artifacts_dir / 'model.pkl')`) if useful for later
 - DO NOT make assumptions:
   - Don't assume column names - inspect with df.columns first
   - Don't assume variable names from previous iterations - check what's available above
