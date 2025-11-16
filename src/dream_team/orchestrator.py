@@ -651,12 +651,16 @@ Output ONLY the search query (2-5 words).
                             limit=20
                         )
 
-                        # Sort by citation count to get seminal works
-                        raw_results.sort(key=lambda p: p.citation_count, reverse=True)
-                        papers_to_analyze = [p for p in raw_results[:5] if p.paper_id not in existing_paper_ids][:2]
+                        if raw_results:
+                            # Sort by citation count to get seminal works
+                            raw_results.sort(key=lambda p: p.citation_count, reverse=True)
+                            papers_to_analyze = [p for p in raw_results[:5] if p.paper_id not in existing_paper_ids][:2]
 
-                        papers = [p.to_paper() for p in papers_to_analyze]
-                        print(f"      Found {len(papers)} seminal papers from references")
+                            papers = [p.to_paper() for p in papers_to_analyze]
+                            print(f"      Found {len(papers)} seminal papers from references")
+                        else:
+                            papers = []
+                            print(f"      No references found (API error or empty)")
                     else:
                         papers = []
                         print(f"      No paper ID available for backward search")
@@ -735,7 +739,7 @@ Output ONLY the search query (2-5 words).
             print("   No papers found across all searches\n")
 
         agenda = f"""
-**BE CONCISE.** Decide what to implement this iteration.
+**BE CONCISE.**
 
 ## Problem:
 {problem_statement}
@@ -746,22 +750,15 @@ Output ONLY the search query (2-5 words).
 {history_context}
 {research_context}
 
-## Your Role:
-You are world-class experts in your fields. When suggesting approaches:
-- **Domain Experts**: Reference the domain research YOU searched (shown with your name above)
-  - Apply insights from your field's literature to inform the approach
-  - Cite specific papers that support your recommendations (e.g., "Based on Smith et al. 2023...")
-- **Lead**: Synthesize domain expertise with practical ML implementation
-- Ground ALL recommendations in research evidence, not just intuition
+## Roles:
+- **Team Members**: YOU propose what to implement, citing research from YOUR domain (shown above)
+- **Lead**: Ask questions, then synthesize team proposals into a plan
 
-## Your Task:
-In 2-3 sentences, describe what needs to be implemented this iteration.
+## Task:
+Team members: In 2-3 sentences, propose what should be implemented this iteration based on YOUR field's research.
+Lead: First ask 1-2 questions to guide discussion. After hearing proposals, synthesize into a plan.
+
 Focus on WHAT to do, not HOW to code it.
-Domain experts: cite your field's research. Lead: coordinate the plan.
-
-A coding agent will receive your discussion and implement it.
-
-Keep your response SHORT and ACTION-ORIENTED.
 """
 
         meeting = TeamMeeting(save_dir=str(self.results_dir / 'meetings'))
@@ -805,19 +802,11 @@ The team has discussed what to implement. Write Python code to implement their p
   (You can use any of these variables directly in your code)
 {previous_output_context}
 ## Requirements:
-- Write complete, executable code:
-  - Use variables from "Available in execution context" - they are GUARANTEED to exist
-  - Define any new variables you need
-  - Import ALL symbols you use from libraries (functions, classes, constants)
-  - Optional: Save large objects to disk (e.g., `joblib.dump(model, artifacts_dir / 'model.pkl')`) if useful for later
-- DO NOT make assumptions:
-  - Don't assume column names - inspect with df.columns first
-  - Don't assume variable names from previous iterations - check what's available above
-  - Don't assume imports - explicitly import everything you use
-- A GPU is available - use it when training models
-- Suppress verbose output: warnings.filterwarnings('ignore'), verbose=-1 for LightGBM/XGBoost
-- Print key results and store metrics in variables (e.g., mae, rmse, f1_score)
-- Created variables persist to next iteration
+- Use variables from "Available in execution context" above
+- Import what you use, define new variables you need
+- Inspect before using: print(df.columns), df.head() - never assume column names
+- GPU available - use it when training
+- Print results, suppress warnings
 
 Output ONLY the Python code, wrapped in ```python code blocks.
 """
@@ -974,22 +963,7 @@ Your code failed with an error. Fix it.
 ## Task
 Fix the code by addressing the root cause, not symptoms:
 
-Note: A GPU is available - use it when training models.
-
-Common error patterns and fixes:
-- **NameError** → Something is used but not defined. Either:
-  - Import it (check library docs for what to import)
-  - Define it as a variable
-  - Check if it's a typo
-- **KeyError** → Column/key doesn't exist. Inspect first: df.columns, df.head()
-- **AttributeError** → Object doesn't have that method. Check type and available methods.
-- **TypeError** → Wrong type passed. Check what function expects.
-
-General debugging approach:
-1. Read the error message - it tells you exactly what's wrong
-2. Look at the traceback line number - that's where it failed
-3. Check what's available (imports, variables, columns)
-4. Fix the actual problem, don't work around it
+Note: GPU available. For KeyError - inspect first (print df.columns), don't assume.
 
 Output ONLY the FIXED Python code, wrapped in ```python code blocks.
 """
