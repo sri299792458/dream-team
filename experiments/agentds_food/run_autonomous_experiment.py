@@ -97,17 +97,17 @@ def main():
     # Principal Investigator starts alone
     pi = Agent(
         title="Principal Investigator",
-        expertise="machine learning strategy, experimental design, research methodology",
-        goal="optimize the target metric through systematic experimentation",
-        role="explore the problem, recruit team, coordinate research direction"
+        expertise="machine learning strategy, experimental design, research methodology, research literature review",
+        goal="optimize the target metric through systematic experimentation and research-driven decisions",
+        role="explore the problem, research relevant literature, recruit expert team, coordinate research direction"
     )
 
     # Coding agent (translates all discussions into code)
     coding_agent = Agent(
         title="Research Engineer",
-        expertise="Python, pandas, scikit-learn, numpy, data analysis, implementation",
+        expertise="Python, pandas, scikit-learn, numpy, data analysis, implementation, translating research into code",
         goal="implement research plans accurately and efficiently",
-        role="translate discussions and plans into executable code"
+        role="translate team's research-backed strategies into executable, production-quality code"
     )
 
     print(f"  Starting with:")

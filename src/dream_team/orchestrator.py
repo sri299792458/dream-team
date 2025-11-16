@@ -271,6 +271,24 @@ Output ONLY the Python code, wrapped in ```python code blocks.
         # PI reviews results and recruits team
         print(f"\n{self.team_lead.title} reviewing exploration results and recruiting team...\n")
 
+        # Fetch research to inform recruitment decisions
+        research_summary = ""
+        print("📚 Searching research literature to inform team composition...\n")
+        try:
+            papers = self.research.research_topic(
+                query=problem_statement[:200],
+                context="Understanding what methodologies and expertise are commonly used",
+                num_papers=3
+            )
+            if papers:
+                research_summary = "\n## Relevant Research Approaches:\n"
+                for paper in papers[:2]:  # Just 2 for bootstrap
+                    research_summary += f"- {paper.get('title', 'Unknown')}: "
+                    research_summary += f"{paper.get('abstract', 'No abstract')[:100]}...\n"
+                research_summary += "\n"
+        except Exception as e:
+            print(f"   Note: Research search failed: {e}\n")
+
         recruitment_task = f"""
 Based on the problem and exploration results, decide what expertise you need on your team.
 
@@ -279,6 +297,8 @@ Based on the problem and exploration results, decide what expertise you need on 
 
 ## Exploration Results:
 {results['output'][:2000] if results['success'] else "Exploration failed, but you have the problem statement."}
+
+{research_summary}
 
 ## Your Task:
 List 1-3 team members you want to recruit. For each, provide:
@@ -350,9 +370,9 @@ Format your response as a simple list, one team member per line.
 
         ml_strategist = Agent(
             title="ML Strategist",
-            expertise="machine learning algorithms, feature engineering, model selection, predictive modeling",
-            goal="design effective predictive approaches based on data characteristics",
-            role="propose modeling strategies and analytical approaches"
+            expertise="machine learning algorithms, feature engineering, model selection, predictive modeling, research literature in ML/AI, state-of-the-art methods",
+            goal="design evidence-based predictive approaches grounded in research and best practices",
+            role="propose modeling strategies with citations to relevant research when appropriate"
         )
 
         return [ml_strategist]
@@ -389,9 +409,16 @@ Format your response as a simple list, one team member per line.
 
 {history_context}
 
+## Your Role:
+You are world-class experts in your fields. When suggesting approaches:
+- Ground your recommendations in established research and methods
+- Cite relevant papers/techniques when appropriate (e.g., "Smith et al. 2023 showed...")
+- Leverage your deep expertise to propose evidence-based solutions
+
 ## Your Task:
 In 2-3 sentences, describe what needs to be implemented this iteration.
 Focus on WHAT to do, not HOW to code it.
+Ground your suggestions in your expertise and cite research when relevant.
 
 A coding agent will receive your discussion and implement it.
 
@@ -658,38 +685,161 @@ Output ONLY the FIXED Python code, wrapped in ```python code blocks.
         return False
 
     def _evolve_team(self, problem_statement: str, current_metrics: Dict[str, float]):
-        """Evolve team members based on current challenges"""
-        print("\n🧬 Evolving team...\n")
+        """
+        Organically evolve team composition based on what the problem demands.
 
-        # Research relevant papers
-        print("📚 Researching papers...\n")
+        PI analyzes current situation and decides:
+        - Add new specialists?
+        - Remove agents no longer contributing?
+        - Deepen expertise of existing agents?
+        """
+        print("\n🧬 Evolving team composition...\n")
+
+        # Research relevant papers to inform evolution
+        print("📚 Researching latest approaches...\n")
         papers = self.research.research_topic(
             query=problem_statement[:200],
-            context=f"Current performance: {current_metrics}",
-            num_papers=3
+            context=f"Current performance: {current_metrics}. Looking for new approaches.",
+            num_papers=5
         )
 
-        # Evolve first team member (or could evolve all)
-        if self.team_members:
-            agent = self.team_members[0]
+        papers_summary = ""
+        if papers:
+            papers_summary = "\n## Research Findings:\n"
+            for paper in papers[:3]:
+                papers_summary += f"- {paper.get('title', 'Unknown')}: {paper.get('abstract', '')[:120]}...\n"
 
-            context = {
-                'problem_description': problem_statement,
-                'performance_metrics': current_metrics,
-                'iteration': self.iteration
-            }
+        # PI analyzes team composition and decides what changes are needed
+        current_team_info = "\n".join([
+            f"- {agent.title}: {agent.expertise[:100]}..."
+            for agent in self.team_members
+        ])
 
-            self.evolution_engine.evolve_agent(
-                agent=agent,
-                context=context,
-                papers=papers,
-                trigger_reason=f"Performance plateau at iteration {self.iteration}"
-            )
+        recent_history = ""
+        if len(self.experiment_history) >= 3:
+            recent_history = "\n## Recent Progress:\n"
+            for hist in self.experiment_history[-3:]:
+                recent_history += f"Iteration {hist['iteration']}: {hist.get('metrics', {})}\n"
 
-            # Save evolved agent
-            agent.save(
-                self.results_dir / 'agents' / f'{agent.title.lower().replace(" ", "_")}_iter_{self.iteration}.json'
-            )
+        evolution_task = f"""
+You've hit a plateau. Analyze the team composition and decide how to evolve.
+
+## Current Team:
+{current_team_info if current_team_info else "Only you (PI)"}
+
+## Current Performance:
+{current_metrics}
+
+{recent_history}
+
+{papers_summary}
+
+## Your Options:
+1. ADD a new specialist (e.g., "Add Time Series Expert with expertise in...")
+2. REMOVE an agent (e.g., "Remove ML Strategist - insights already incorporated")
+3. DEEPEN an existing agent (e.g., "Deepen ML Strategist into Deep Learning Specialist with expertise in...")
+4. MULTIPLE changes (e.g., "Add X, Remove Y, Deepen Z")
+
+## Your Task:
+Based on the plateau and research findings, what team changes will help us break through?
+
+Specify each change on a new line:
+- ADD: [Title] with expertise in [expertise] to [role]
+- REMOVE: [Title] because [reason]
+- DEEPEN: [Title] into [New Title] with expertise in [new expertise]
+
+Be strategic - only make changes that address the current challenge.
+"""
+
+        meeting = IndividualMeeting(save_dir=str(self.results_dir / 'meetings'))
+        evolution_plan = meeting.run(
+            agent=self.team_lead,
+            task=evolution_task,
+            num_iterations=1
+        )
+
+        print(f"\n{self.team_lead.title}'s evolution plan:\n{evolution_plan}\n")
+
+        # Execute the evolution plan
+        self._execute_evolution_plan(evolution_plan, papers)
+
+    def _execute_evolution_plan(self, plan: str, papers: List[Dict]):
+        """
+        Parse and execute PI's evolution plan.
+
+        Handles ADD, REMOVE, DEEPEN commands.
+        """
+        changes_made = []
+
+        for line in plan.split('\n'):
+            line = line.strip()
+
+            # ADD new agent
+            if line.upper().startswith('ADD:'):
+                # Parse: "ADD: Time Series Expert with expertise in ... to ..."
+                # For now, create generic specialist
+                # Future: parse and create custom agent
+                new_agent = Agent(
+                    title="Domain Specialist",
+                    expertise="specialized domain knowledge based on current challenge requirements",
+                    goal="provide specialized expertise to break through performance plateau",
+                    role="apply domain-specific insights and advanced techniques"
+                )
+                self.team_members.append(new_agent)
+                changes_made.append(f"✅ Added {new_agent.title}")
+
+            # REMOVE agent
+            elif line.upper().startswith('REMOVE:'):
+                # Parse: "REMOVE: ML Strategist because ..."
+                # Extract agent title
+                if self.team_members and 'ML Strategist' in line:
+                    # Simple heuristic - remove first team member
+                    removed = self.team_members.pop(0)
+                    changes_made.append(f"✅ Removed {removed.title}")
+
+            # DEEPEN agent
+            elif line.upper().startswith('DEEPEN:'):
+                # Parse: "DEEPEN: ML Strategist into Time Series Specialist..."
+                # Deepen first team member
+                if self.team_members:
+                    agent = self.team_members[0]
+                    old_title = agent.title
+
+                    # Use evolution engine to deepen expertise
+                    context = {
+                        'problem_description': plan,
+                        'deepening': True
+                    }
+                    self.evolution_engine.evolve_agent(
+                        agent=agent,
+                        context=context,
+                        papers=papers,
+                        trigger_reason="Team composition evolution - specialization needed"
+                    )
+
+                    changes_made.append(f"✅ Deepened {old_title} → {agent.title}")
+
+        # Update all_agents list
+        self.all_agents = [self.team_lead] + self.team_members
+
+        print("\n🔄 Team Evolution Complete:")
+        for change in changes_made:
+            print(f"   {change}")
+
+        print(f"\n👥 New team composition:")
+        print(f"   - {self.team_lead.title} (Lead)")
+        for agent in self.team_members:
+            print(f"   - {agent.title}")
+        print()
+
+        # Save evolution record
+        evolution_record = {
+            'iteration': self.iteration,
+            'evolution_plan': plan,
+            'changes': changes_made,
+            'new_team': [{'title': a.title, 'expertise': a.expertise} for a in self.all_agents]
+        }
+        save_json(evolution_record, self.results_dir / f'evolution_iter_{self.iteration}.json')
 
     def _update_best_metric(
         self,
