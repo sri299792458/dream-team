@@ -2,6 +2,7 @@
 Experiment orchestration for autonomous Dream Team operation.
 
 Coordinates agents, code execution, and iterative improvement.
+Uses mathematical framework for emergent evolution.
 """
 
 from typing import List, Dict, Any, Optional
@@ -15,6 +16,8 @@ from .meetings import TeamMeeting, IndividualMeeting
 from .evolution import EvolutionEngine, EvolutionTrigger
 from .research import get_research_assistant
 from .utils import save_json, load_json
+from .knowledge_state import KnowledgeGraph, extract_concepts_from_text
+from .team import Team
 
 
 class ExperimentOrchestrator:
@@ -58,6 +61,11 @@ class ExperimentOrchestrator:
         self.best_metric = None
         self.bootstrap_completed = len(team_members) > 0  # Skip bootstrap if team already exists
         self.column_schemas = {}  # Will be populated during bootstrap
+
+        # Mathematical framework (NEW)
+        self.problem_graph = None  # KnowledgeGraph extracted from problem
+        self.team = None  # Team object for collective dynamics
+        self.use_mathematical_evolution = True  # Toggle for mathematical vs hardcoded evolution
 
     def run(
         self,
@@ -124,6 +132,10 @@ class ExperimentOrchestrator:
             self._bootstrap_exploration(problem_statement)
             self.bootstrap_completed = True
             print("\n" + "="*60)
+
+        # Initialize mathematical framework
+        if self.use_mathematical_evolution:
+            self._initialize_mathematical_framework(problem_statement, target_metric)
             print("Bootstrap complete. Starting team iterations...\n")
 
         # Main iteration loop
@@ -192,8 +204,11 @@ class ExperimentOrchestrator:
                 print(f"\n🎯 Target achieved! {target_metric}: {metrics.get(target_metric)}")
                 break
 
-            # Step 7: Check if evolution needed
-            should_evolve = self._check_evolution_triggers(metrics, target_metric, minimize_metric)
+            # Step 7: Update dynamics and check if evolution needed
+            if self.use_mathematical_evolution:
+                should_evolve = self._check_mathematical_evolution(metrics, target_metric, minimize_metric)
+            else:
+                should_evolve = self._check_evolution_triggers(metrics, target_metric, minimize_metric)
 
             if should_evolve:
                 self._evolve_team(problem_statement, metrics)
@@ -323,111 +338,8 @@ Output ONLY the Python code, wrapped in ```python code blocks.
             print(results['error'])
             # Continue anyway - PI can recruit based on problem statement
 
-        # PI reviews results and recruits team
+        # PI reviews results and recruits team using ReAct
         print(f"\n{self.team_lead.title} reviewing exploration results and recruiting team...\n")
-
-        # Fetch research to inform recruitment decisions
-        # Bootstrap always uses Stage 1: highly-cited review papers
-        research_summary = ""
-        print("📚 Searching for highly-cited review papers on the problem...\n")
-        try:
-            # Use LLM to extract academic search terms from problem statement
-            query_extraction_prompt = f"""
-Extract ONE concise academic search query from this problem statement.
-
-Problem: {problem_statement[:300]}
-
-Output only 2-3 words, academic terminology.
-Examples: "shelf life prediction", "time series forecasting", "image segmentation"
-"""
-            search_query = self.llm.generate(query_extraction_prompt, temperature=0.3).strip()
-            # Clean up - remove quotes if LLM added them
-            search_query = search_query.strip('"\'')
-            print(f"   Search query: '{search_query}'")
-
-            # Bootstrap: Search for highly-cited review papers (wider year range, sort by citations)
-            print(f"   Stage 1: Searching highly-cited papers on '{search_query}'...")
-            raw_results = self.research.ss_api.search(
-                query=search_query,
-                limit=20,
-                year_range=(2000, 2024)  # Wider range to find influential older papers
-            )
-
-            if raw_results:
-                # Sort by citation count to get most influential papers
-                raw_results.sort(key=lambda p: p.citation_count, reverse=True)
-                papers_to_analyze = raw_results[:3]  # Top 3 most cited
-
-                print(f"   Found {len(raw_results)} papers, analyzing top {len(papers_to_analyze)} by citations...")
-
-                # Use LLM to analyze relevance
-                from .agent import Paper
-                papers = []
-                for i, result in enumerate(papers_to_analyze):
-                    print(f"   Analyzing paper {i+1}: {result.title[:60]}... (citations: {result.citation_count})")
-
-                    analysis_prompt = f"""You are analyzing a scientific paper for relevance to a problem.
-
-Problem: {problem_statement[:300]}
-
-Paper Title: {result.title}
-Authors: {', '.join(result.authors)}
-Year: {result.year}
-Citations: {result.citation_count}
-Abstract: {result.abstract}
-
-Tasks:
-1. Rate relevance to the problem (0.0-1.0)
-2. Extract 2-3 key findings or methodologies
-3. Summarize applicability in one sentence
-
-Respond in JSON format:
-{{
-    "relevance_score": 0.0-1.0,
-    "key_findings": ["finding 1", "finding 2"],
-    "applicability": "brief summary"
-}}
-"""
-
-                    try:
-                        analysis = self.llm.generate_json(analysis_prompt, temperature=0.3)
-                        paper = Paper(
-                            title=result.title,
-                            authors=result.authors,
-                            year=result.year,
-                            abstract=result.abstract,
-                            key_findings=analysis.get("key_findings", []),
-                            relevance_score=analysis.get("relevance_score", 0.0),
-                            semantic_scholar_id=result.paper_id,
-                            citation_count=result.citation_count
-                        )
-                        papers.append(paper)
-                    except Exception as e:
-                        print(f"   ⚠️  Error analyzing paper: {e}")
-                        # Fallback: create paper without LLM analysis
-                        paper = Paper(
-                            title=result.title,
-                            authors=result.authors,
-                            year=result.year,
-                            abstract=result.abstract,
-                            semantic_scholar_id=result.paper_id,
-                            citation_count=result.citation_count,
-                            relevance_score=0.5
-                        )
-                        papers.append(paper)
-
-                if papers:
-                    research_summary = "\n## Highly-Cited Research on This Problem:\n"
-                    for paper in papers:
-                        research_summary += f"- {paper.title} ({paper.year}, {paper.citation_count} citations)\n"
-                        if paper.key_findings:
-                            research_summary += f"  Key findings: {'; '.join(paper.key_findings[:2])}\n"
-                    research_summary += "\n"
-            else:
-                print("   No papers found")
-
-        except Exception as e:
-            print(f"   Note: Research search skipped (API rate limit or error): {e}\n")
 
         recruitment_task = f"""
 Based on the problem and exploration results, decide what expertise you need on your team.
@@ -438,24 +350,27 @@ Based on the problem and exploration results, decide what expertise you need on 
 ## Exploration Results:
 {results['output'][:2000] if results['success'] else "Exploration failed, but you have the problem statement."}
 
-{research_summary}
-
 ## Your Task:
 List 1-3 team members you want to recruit. For each, provide:
 - Title (e.g., "ML Strategist", "Domain Expert", "Data Analyst")
 - Expertise (what they should know)
 - Role (what they'll contribute)
 
-Be specific about the skills needed based on what you learned.
+Be specific about the skills needed based on what you learned from exploration and research papers.
 
 Format your response as a simple list, one team member per line.
 """
 
-        recruitment_meeting = IndividualMeeting(save_dir=str(self.results_dir / 'meetings'))
+        # Use ReAct so PI can search papers while thinking about recruitment
+        recruitment_meeting = IndividualMeeting(
+            save_dir=str(self.results_dir / 'meetings'),
+            research_api=self.research.ss_api if hasattr(self, 'research') else None
+        )
         recruitment_plan = recruitment_meeting.run(
             agent=self.team_lead,
             task=recruitment_task,
-            num_iterations=1
+            num_iterations=1,
+            use_react=True  # PI uses ReAct to search papers during recruitment
         )
 
         print(f"Recruitment plan:\n{recruitment_plan}\n")
@@ -612,7 +527,7 @@ Only output the agent specifications, nothing else.
             # Extract approach preview to avoid slicing syntax issues in f-string
             approach = last['approach']
             approach_preview = approach[:200] + "..." if len(approach) > 200 else approach
-            history_context = f"\n## Previous Iteration:\nApproach: {approach_preview}\nMetrics: {last['metrics']}{output_preview}\n"
+            history_context = f"\n## Previous Iteration Results:\nApproach tried: {approach_preview}\nMetrics achieved: {last['metrics']}\n(Note: These are PREVIOUS iteration metrics, not current){output_preview}\n"
 
         # Research context removed - agents now use ReAct loop during meetings
         # They search papers iteratively as they reason about proposals
@@ -638,12 +553,12 @@ Only output the agent specifications, nothing else.
 {research_context}
 
 ## Roles:
-- **Team Members**: Propose features using ONLY the columns listed above
-- **Lead**: Ask questions, then synthesize proposals
+- **Team Members**: Propose features using ONLY the columns listed above (will use ReAct to search papers and ground proposals)
+- **Lead**: Synthesize team's proposals into clear decisions
 
 ## Task:
 Team members: Propose what to implement based on your expertise (2-3 sentences).
-Lead: Ask 1-2 questions, then synthesize proposals.
+Lead: Synthesize the team's proposals into a decisive action plan.
 """
 
         # Log agenda summary (not full text - too verbose)
@@ -1368,3 +1283,142 @@ Be strategic - only make changes that address the current challenge.
             'iteration_history': self.experiment_history,
             'execution_summary': self.executor.summary()
         }
+
+    # ========== Mathematical Evolution Methods ==========
+
+    def _initialize_mathematical_framework(self, problem_statement: str, target_metric: str):
+        """Initialize problem graph and team for mathematical evolution"""
+        print("\n🧮 Initializing mathematical framework...")
+
+        # Extract problem as knowledge graph
+        self.problem_graph = self._extract_problem_graph(problem_statement, target_metric)
+        print(f"   ✓ Problem graph: {len(self.problem_graph.concepts)} concepts")
+
+        # Create team object
+        self.team = Team(self.all_agents)
+        print(f"   ✓ Team initialized: {len(self.team.agents)} agents")
+
+        # Show initial team state
+        diversity = self.team.compute_diversity()
+        print(f"   ✓ Team diversity: {diversity:.3f}")
+        print()
+
+    def _extract_problem_graph(self, problem_statement: str, target_metric: str) -> KnowledgeGraph:
+        """Extract problem as knowledge graph"""
+        # Combine problem statement with target metric for better concept extraction
+        problem_text = f"{problem_statement} Target metric: {target_metric}"
+
+        # Extract concepts
+        concepts = extract_concepts_from_text(problem_text, use_llm=False)
+
+        # Create knowledge graph
+        graph = KnowledgeGraph()
+
+        # Add domain-specific important concepts
+        important_concepts = {
+            'regression', 'classification', 'prediction', 'forecasting',
+            'optimization', 'machine_learning', 'deep_learning',
+            'gradient_boosting', 'neural_network', 'feature_engineering',
+            target_metric.lower().replace('_', ' ')
+        }
+
+        # Combine extracted + important
+        all_concepts = concepts | important_concepts
+
+        # Add concepts with importance
+        for concept in all_concepts:
+            # Higher importance for concepts in problem statement
+            if concept.lower() in problem_statement.lower():
+                importance = 2.0
+            elif concept == target_metric.lower().replace('_', ' '):
+                importance = 3.0  # Metric is very important
+            else:
+                importance = 1.0
+
+            graph.add_concept(concept, importance=importance)
+
+        return graph
+
+    def _check_mathematical_evolution(
+        self,
+        metrics: Dict[str, float],
+        target_metric: str,
+        minimize: bool
+    ) -> bool:
+        """Check if evolution needed using mathematical framework"""
+        if len(self.experiment_history) < 3:
+            return False  # Need history
+
+        # Build metric history
+        metric_history = [
+            h['metrics'].get(target_metric, float('inf') if minimize else float('-inf'))
+            for h in self.experiment_history
+        ]
+
+        # Update agent dynamics based on iteration results
+        self._update_agent_dynamics(metric_history, minimize)
+
+        # Get team state diagnosis
+        state = self.team.diagnose_state(metric_history, minimize=minimize)
+        print(f"\n📊 Team state: {state}")
+
+        # Get diversity
+        diversity = self.team.compute_diversity()
+        print(f"   Team diversity: {diversity:.3f}")
+
+        # Check each agent for evolution signals
+        evolution_signals = []
+        for agent in self.all_agents:
+            should_evolve, evo_type = agent.should_evolve(self.problem_graph, self.team)
+            if should_evolve:
+                evolution_signals.append((agent, evo_type))
+                gini = agent.δ.gini_coefficient()
+                effectiveness = agent.contribution_effectiveness()
+                print(f"   🔔 {agent.title}: {evo_type} (gini={gini:.2f}, eff={effectiveness:.2f})")
+
+        # Evolution triggered if any agent needs it OR team diagnosed need
+        if evolution_signals:
+            print(f"\n🔔 Mathematical evolution triggered:")
+            for agent, evo_type in evolution_signals:
+                print(f"   - {agent.title}: {evo_type}")
+            return True
+
+        if state in ["REFRAMING", "EXPLORATION"]:
+            print(f"   - Team needs {state}")
+            return True
+
+        return False
+
+    def _update_agent_dynamics(self, metric_history: List[float], minimize: bool):
+        """Update agent mathematical state based on iteration results"""
+        if len(metric_history) < 2:
+            return
+
+        # Compute learning quality for each concept
+        # Simple heuristic: if metrics improved, quality is high
+        recent_improvement = metric_history[-2] - metric_history[-1] if minimize else metric_history[-1] - metric_history[-2]
+
+        # Quality proportional to improvement
+        if recent_improvement > 0:
+            base_quality = 0.8  # Good iteration
+        elif abs(recent_improvement) < 0.01:
+            base_quality = 0.5  # Plateau
+        else:
+            base_quality = 0.3  # Regression
+
+        # All concepts get similar quality (could be more sophisticated)
+        learning_quality = {
+            concept: base_quality
+            for concept in self.problem_graph.concepts
+        }
+
+        # Update all agents' dynamics
+        self.team.update_all_dynamics(
+            problem=self.problem_graph,
+            learning_quality=learning_quality,
+            dt=0.1
+        )
+
+        # Log team state
+        team_state = self.team.get_state_summary()
+        print(f"\n   📈 Mathematical state updated (diversity: {team_state['diversity']:.3f})")
