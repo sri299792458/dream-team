@@ -243,8 +243,7 @@ The PI wants to do initial exploration. Write Python code to implement this:
 {problem_statement}
 
 ## Available in execution context:
-- Libraries: pandas (pd), numpy (np), pathlib.Path
-- Common ML libraries: sklearn, lightgbm, xgboost, matplotlib, seaborn (if needed)
+- Pre-imported libraries: pandas (pd), numpy (np), pathlib.Path
 - Variables: {list(self.executor.data_context.keys())}
   (You can use any of these variables directly in your code)
 
@@ -252,7 +251,7 @@ The PI wants to do initial exploration. Write Python code to implement this:
 - Write exploratory code (e.g., .info(), .head(), .describe(), basic stats)
 - DEFINE ALL VARIABLES YOU USE - don't assume variables exist unless they're in the available context above
 - DO NOT GUESS at column names - inspect dataframes first (e.g., print(df.columns), df.head())
-- **ONLY USE INSTALLED LIBRARIES** - stick to: pandas, numpy, sklearn, lightgbm, xgboost, matplotlib, seaborn
+- Use whatever libraries you need - if not installed, they will be installed automatically
 - Include clear print statements showing what you find
 - Focus on understanding data structure and the problem
 
@@ -555,8 +554,7 @@ The team has discussed what to implement. Write Python code to implement their p
 {self.problem_statement}
 
 ## Available in execution context:
-- Libraries: pandas (pd), numpy (np), pathlib.Path
-- Common ML libraries: sklearn, lightgbm, xgboost (if you need others, check if they're installed first)
+- Pre-imported libraries: pandas (pd), numpy (np), pathlib.Path
 - Variables: {list(self.executor.data_context.keys())}
   (You can use any of these variables directly in your code)
 {previous_output_context}
@@ -564,9 +562,8 @@ The team has discussed what to implement. Write Python code to implement their p
 - Write complete, executable Python code that implements what the team discussed
 - DEFINE ALL VARIABLES YOU USE - don't assume variables exist unless they're in the available context above
 - DO NOT GUESS at column names - if you need to know the schema, inspect the dataframes first (e.g., print(df.columns))
-- **ONLY USE INSTALLED LIBRARIES** - stick to: pandas, numpy, sklearn, lightgbm, xgboost, matplotlib, seaborn
-- If you need a specialized library, try to achieve the same goal with standard libraries
-- Include necessary imports (sklearn, lightgbm, etc.) if you use them
+- Use whatever libraries you think are best for the task - missing packages will be installed automatically
+- Include necessary imports at the top of your code
 - Include print statements for key results
 - Store metrics in variables (e.g., mae, cv_scores, f1_score)
 - Variables you create will persist to the next iteration
@@ -708,24 +705,23 @@ Your code failed with an error. Fix it.
 {traceback}
 
 ## Available in execution context:
-- Available libraries: pandas, numpy, sklearn, lightgbm, xgboost, matplotlib, seaborn
+- Pre-imported libraries: pandas, numpy, pathlib
 - Variables: {list(self.executor.data_context.keys())}
+  Note: Missing packages are auto-installed, so if you see ModuleNotFoundError, just wait - it will retry automatically
 {previous_output_context}
 ## Task
 Analyze the error and fix the code. Common issues:
-- **ModuleNotFoundError** - Library not installed! Use only: pandas, numpy, sklearn, lightgbm, xgboost, matplotlib, seaborn
-  - If you tried skopt (scikit-optimize), use GridSearchCV or RandomizedSearchCV from sklearn instead
-  - If you tried optuna, use sklearn's hyperparameter tuning instead
 - **KeyError (column name)** - DO NOT GUESS column names! First inspect the dataframe: print(df.columns), df.head(), df.info()
 - **Undefined variables** - define ALL variables you use (e.g., target_column = 'column_name')
+- **AttributeError** - Check object types and available methods
 - Missing imports - add necessary import statements
 - Incorrect variable names - check spelling and case
 - Data type mismatches - ensure correct data types
 - Index errors - verify index/column existence before accessing
 
 **IMPORTANT:**
-- If ModuleNotFoundError: rewrite using ONLY installed libraries listed above
 - If KeyError: add code to INSPECT the dataframe structure first, then use ACTUAL column names
+- Use whatever libraries make sense - they'll be installed if needed
 
 Output ONLY the FIXED Python code, wrapped in ```python code blocks.
 """
