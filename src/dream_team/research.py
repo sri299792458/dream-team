@@ -46,10 +46,9 @@ class SemanticScholarAPI:
         if self.api_key:
             self.session.headers.update({"x-api-key": self.api_key})
 
-        # Conservative delays to avoid rate limiting
-        # Free tier: 100 requests/5min = 1 request every 3 seconds
-        # With key: 5000 requests/5min = 1 request every 0.06 seconds, but be conservative
-        self.rate_limit_delay = 3.0 if not api_key else 1.0  # Seconds between requests
+        # Rate limiting: 1 request per second (per Semantic Scholar docs)
+        # With key: Higher limits, but still respect 1 req/sec minimum
+        self.rate_limit_delay = 1.0  # Seconds between requests
 
     def search(
         self,

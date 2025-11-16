@@ -278,11 +278,19 @@ Output ONLY the Python code, wrapped in ```python code blocks.
         research_summary = ""
         print("📚 Searching research literature to inform team composition...\n")
         try:
-            # Extract clean search query from problem statement
-            # Use first line or sentence, remove newlines
-            search_query = problem_statement.strip().split('\n')[0].strip()
-            if len(search_query) > 100:
-                search_query = search_query[:100]
+            # Use LLM to extract academic search terms from problem statement
+            query_extraction_prompt = f"""
+Extract 2-3 key academic search terms from this problem statement for searching research papers.
+
+Problem: {problem_statement[:300]}
+
+Output ONLY the search query (2-5 words, academic terminology, no quotes).
+Examples: "shelf life prediction", "time series forecasting", "image classification deep learning"
+"""
+            search_query = self.llm.generate(query_extraction_prompt, temperature=0.3).strip()
+            # Clean up - remove quotes if LLM added them
+            search_query = search_query.strip('"\'')
+            print(f"   Search query: '{search_query}'")
 
             papers = self.research.research_topic(
                 query=search_query,
@@ -509,6 +517,18 @@ Keep your response SHORT and ACTION-ORIENTED.
         """Have coding agent write code to implement the approach"""
         print(f"💻 {self.coding_agent.title} implementing approach...\n")
 
+        # Include previous iteration output for context (especially exploration results)
+        previous_output_context = ""
+        if self.experiment_history:
+            last = self.experiment_history[-1]
+            if last['results'].get('output'):
+                output = last['results']['output']
+                # Show last 2000 chars to include exploration results
+                if len(output) > 2000:
+                    previous_output_context = f"\n## Previous Iteration Output (last 2000 chars):\n```\n...{output[-2000:]}\n```\n"
+                else:
+                    previous_output_context = f"\n## Previous Iteration Output:\n```\n{output}\n```\n"
+
         task = f"""
 The team has discussed what to implement. Write Python code to implement their plan.
 
@@ -522,10 +542,11 @@ The team has discussed what to implement. Write Python code to implement their p
 - Libraries: pandas (pd), numpy (np), pathlib.Path
 - Variables: {list(self.executor.data_context.keys())}
   (You can use any of these variables directly in your code)
-
+{previous_output_context}
 ## Requirements:
 - Write complete, executable Python code that implements what the team discussed
 - DEFINE ALL VARIABLES YOU USE - don't assume variables exist unless they're in the available context above
+- DO NOT GUESS at column names - if you need to know the schema, inspect the dataframes first (e.g., print(df.columns))
 - If the problem statement mentions specific column names (e.g., target variable), use those exact names
 - Include necessary imports (sklearn, lightgbm, etc.) if you use them
 - Include print statements for key results
@@ -637,6 +658,17 @@ Output ONLY the Python code, wrapped in ```python code blocks.
         """
         print(f"   🔧 {self.coding_agent.title} fixing error...\n")
 
+        # Include previous iteration output for context
+        previous_output_context = ""
+        if self.experiment_history:
+            last = self.experiment_history[-1]
+            if last['results'].get('output'):
+                output = last['results']['output']
+                if len(output) > 2000:
+                    previous_output_context = f"\n## Previous Iteration Output (last 2000 chars):\n```\n...{output[-2000:]}\n```\n"
+                else:
+                    previous_output_context = f"\n## Previous Iteration Output:\n```\n{output}\n```\n"
+
         task = f"""
 Your code failed with an error. Fix it.
 
@@ -659,15 +691,17 @@ Your code failed with an error. Fix it.
 
 ## Available in execution context:
 - Variables: {list(self.executor.data_context.keys())}
-
+{previous_output_context}
 ## Task
 Analyze the error and fix the code. Common issues:
+- **KeyError (column name)** - DO NOT GUESS column names! First inspect the dataframe: print(df.columns), df.head(), df.info()
 - **Undefined variables** - define ALL variables you use (e.g., target_column = 'column_name')
 - Missing imports - add necessary import statements
 - Incorrect variable names - check spelling and case
 - Data type mismatches - ensure correct data types
-- Index errors - verify index/column existence
-- Division by zero - add checks before division
+- Index errors - verify index/column existence before accessing
+
+**IMPORTANT:** If the error is about missing columns (KeyError), add code to INSPECT the dataframe structure first, then use the ACTUAL column names.
 
 Output ONLY the FIXED Python code, wrapped in ```python code blocks.
 """
@@ -782,15 +816,23 @@ Output ONLY the FIXED Python code, wrapped in ```python code blocks.
         print("📚 Researching latest approaches...\n")
         papers_summary = ""
         try:
-            # Extract clean search query from problem statement
-            search_query = problem_statement.strip().split('\n')[0].strip()
-            if len(search_query) > 100:
-                search_query = search_query[:100]
+            # Use LLM to extract academic search terms
+            query_extraction_prompt = f"""
+Extract 2-3 key academic search terms from this problem for searching research papers.
+
+Problem: {problem_statement[:300]}
+
+Output ONLY the search query (2-5 words, academic terminology, no quotes).
+Examples: "shelf life prediction", "gradient boosting regression", "deep learning forecasting"
+"""
+            search_query = self.llm.generate(query_extraction_prompt, temperature=0.3).strip()
+            search_query = search_query.strip('"\'')
+            print(f"   Search query: '{search_query}'")
 
             papers = self.research.research_topic(
                 query=search_query,
                 context=f"Current performance: {current_metrics}. Looking for new approaches.",
-                num_papers=3  # Reduced to avoid rate limiting
+                num_papers=2  # Reduced to avoid rate limiting
             )
 
             if papers:
