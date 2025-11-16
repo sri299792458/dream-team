@@ -7,6 +7,8 @@ Provides safe execution environment for agent-generated code.
 import sys
 import io
 import traceback
+import subprocess
+import re
 from typing import Dict, Any, Optional, Tuple
 import pandas as pd
 import numpy as np
@@ -16,15 +18,18 @@ from pathlib import Path
 class CodeExecutor:
     """Executes Python code in a controlled environment"""
 
-    def __init__(self, data_context: Dict[str, Any] = None):
+    def __init__(self, data_context: Dict[str, Any] = None, auto_install: bool = True):
         """
         Initialize executor with data context.
 
         Args:
             data_context: Dictionary of data/variables available to executed code
+            auto_install: Whether to automatically install missing packages (default: True)
         """
         self.data_context = data_context or {}
         self.execution_history = []
+        self.auto_install = auto_install
+        self.installed_packages = set()  # Track what we've installed
 
     def execute(
         self,
@@ -115,6 +120,12 @@ class CodeExecutor:
 
             print(f"   ❌ Error: {e}")
 
+            # Check if it's a ModuleNotFoundError and auto-install is enabled
+            if self.auto_install:
+                missing_package = self._extract_missing_module(str(e), result['traceback'])
+                if missing_package:
+                    result['missing_package'] = missing_package
+
         finally:
             sys.stdout = old_stdout
             sys.stderr = old_stderr
@@ -137,12 +148,21 @@ class CodeExecutor:
         """
         Execute code with automatic retry on failure.
 
+        If failure is due to missing package, automatically install and retry.
+
         Returns the result of first successful execution or last failure.
         """
         for attempt in range(max_retries + 1):
             result = self.execute(code, description)
             if result['success']:
                 return result
+
+            # Check if failure was due to missing package
+            if 'missing_package' in result and self.auto_install:
+                package = result['missing_package']
+                if self._install_package(package):
+                    print(f"   🔄 Retrying after installing {package}...")
+                    continue
 
             if attempt < max_retries:
                 print(f"   🔄 Retry {attempt + 1}/{max_retries}")
@@ -171,6 +191,68 @@ class CodeExecutor:
     def clear_history(self):
         """Clear execution history"""
         self.execution_history = []
+
+    def _install_package(self, package_name: str) -> bool:
+        """
+        Install a Python package using pip.
+
+        Args:
+            package_name: Name of package to install
+
+        Returns:
+            True if installation successful, False otherwise
+        """
+        if package_name in self.installed_packages:
+            print(f"   📦 {package_name} already installed this session")
+            return True
+
+        print(f"   📦 Installing missing package: {package_name}...")
+        try:
+            subprocess.check_call(
+                [sys.executable, "-m", "pip", "install", package_name],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.PIPE
+            )
+            self.installed_packages.add(package_name)
+            print(f"   ✅ Successfully installed {package_name}")
+            return True
+        except subprocess.CalledProcessError as e:
+            print(f"   ❌ Failed to install {package_name}: {e}")
+            return False
+
+    def _extract_missing_module(self, error_msg: str, traceback_str: str) -> Optional[str]:
+        """
+        Extract the missing module name from a ModuleNotFoundError.
+
+        Args:
+            error_msg: The error message
+            traceback_str: The full traceback
+
+        Returns:
+            Package name to install, or None if not a ModuleNotFoundError
+        """
+        # Check if it's a ModuleNotFoundError
+        if "No module named" not in error_msg:
+            return None
+
+        # Extract module name from error message
+        # Pattern: "No module named 'package'" or "No module named 'package.submodule'"
+        match = re.search(r"No module named ['\"]([^'\"\.]+)", error_msg)
+        if match:
+            module_name = match.group(1)
+
+            # Map common module names to package names
+            # Some modules have different package names in pip
+            package_map = {
+                'sklearn': 'scikit-learn',
+                'cv2': 'opencv-python',
+                'PIL': 'Pillow',
+                'skopt': 'scikit-optimize',
+            }
+
+            return package_map.get(module_name, module_name)
+
+        return None
 
     def summary(self) -> str:
         """Get execution summary"""
