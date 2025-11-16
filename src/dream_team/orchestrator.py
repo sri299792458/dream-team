@@ -636,6 +636,17 @@ Output ONLY the Python code, wrapped in ```python code blocks.
                     print(f"   ✅ Fixed after {attempt} attempt(s)!\n")
                 return result
 
+            # Check if failure was due to missing package - install and retry automatically
+            # This doesn't count against retry limit - it's just installing a dependency
+            if 'missing_package' in result:
+                package = result['missing_package']
+                print(f"   📦 Missing package detected: {package}")
+                if self.executor._install_package(package):
+                    print(f"   🔄 Retrying after installing {package}...\n")
+                    continue  # Retry with same code after installation (doesn't increment attempt)
+                else:
+                    print(f"   ⚠️ Failed to install {package}, asking agent to use alternative...\n")
+
             # If failed and we have retries left, ask agent to fix
             if attempt < max_retries:
                 print(f"   🔧 Asking agent to fix the error...\n")
