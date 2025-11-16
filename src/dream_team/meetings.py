@@ -179,18 +179,21 @@ Provide in JSON format:
         ReAct loop: agent reasons and acts iteratively before final proposal.
 
         Pattern:
-        1. Thought: What should I investigate?
-        2. Action: Search papers on [topic]
-        3. Observation: Papers show...
-        4. (Repeat 1-3)
-        5. Final Answer: Proposal with citations
+        1. Thought: Based on my expertise, I propose X because...
+        2. Action: Search papers to ground/support this idea
+        3. Observation: Papers found to support this
+        4. (Repeat 1-3 to build up grounded proposal)
+        5. Final Answer: Proposal with citations as supporting evidence
+
+        IMPORTANT: Papers are for GROUNDING the agent's expert thinking,
+        not for RESTRICTING what the agent can propose.
         """
         print(f"   🧠 {agent.title} using ReAct reasoning...")
 
         react_history = []
 
         for step in range(max_steps):
-            # Thought: Agent decides what to investigate
+            # Thought: Agent proposes something from their expertise
             thought_prompt = f"""You are {agent.title} preparing for a team meeting.
 
 Agenda: {agenda}
@@ -201,11 +204,12 @@ Discussion so far:
 {"Previous reasoning:" if react_history else ""}
 {self._format_react_history(react_history)}
 
-Think about what you should propose. What aspect should you investigate further to make a grounded recommendation?
+Based on YOUR EXPERTISE and knowledge of machine learning, what do you think would be a good approach for this problem?
+Think about what you would propose, then identify what you'd want to search for to find supporting research.
 
 Output format:
-Thought: [What I'm thinking about]
-Action: Search papers on "[2-4 word search query]"
+Thought: [What I'm proposing based on my expertise and why]
+Action: Search papers on "[2-4 word search query]" to find supporting evidence
 
 Be concise. Only output Thought and Action.
 """
@@ -263,9 +267,13 @@ Discussion so far:
 Your ReAct reasoning process:
 {self._format_react_history(react_history)}
 
-Based on your investigation, provide your final proposal.
-**Cite specific papers from your knowledge base to support your recommendations.**
+Provide your final proposal based on YOUR EXPERTISE and the reasoning you've done.
+Use the papers you found as SUPPORTING EVIDENCE to ground your recommendations.
 
+You are NOT limited to only what's in the papers - propose what YOU think is best based on your ML expertise.
+The papers are there to cite as evidence, not to restrict your thinking.
+
+**Cite relevant papers from your knowledge base to support your recommendations.**
 Format citations as: (Author et al., Year)
 
 Keep it focused (1-2 paragraphs).
