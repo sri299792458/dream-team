@@ -568,19 +568,17 @@ The team has discussed what to implement. Write Python code to implement their p
   (You can use any of these variables directly in your code)
 {previous_output_context}
 ## Requirements:
-- Write complete, executable Python code that implements what the team discussed
-- DEFINE ALL VARIABLES YOU USE - don't assume variables exist unless they're in the available context above
-- DO NOT GUESS at column names - if you need to know the schema, inspect the dataframes first (e.g., print(df.columns))
-- Use whatever libraries you think are best for the task - missing packages will be installed automatically
-- Include necessary imports at the top of your code
-- **Suppress verbose output** - keep logs clean and focused:
-  - For LightGBM: use `verbose=-1` parameter (e.g., lgb.LGBMRegressor(verbose=-1))
-  - For XGBoost: use `verbosity=0` parameter (e.g., xgb.XGBRegressor(verbosity=0))
-  - For scikit-learn: most models are quiet by default
-  - To suppress warnings: add `import warnings; warnings.filterwarnings('ignore')` at the top
-- Include print statements for key results (e.g., "Final MAE: 2.34")
-- Store metrics in variables (e.g., mae, cv_scores, f1_score)
-- Variables you create will persist to the next iteration
+- Write SELF-CONTAINED code - check what exists before using it:
+  - Variables listed above are available, everything else must be defined or created
+  - If you need a variable that might not exist, check first or recreate it from available data
+  - Import ALL symbols you use from libraries (don't forget constants, classes, functions)
+- DO NOT make assumptions:
+  - Don't assume column names - inspect with df.columns first
+  - Don't assume variable names from previous iterations - check what's available above
+  - Don't assume imports - explicitly import everything you use
+- Suppress verbose output: warnings.filterwarnings('ignore'), verbose=-1 for LightGBM/XGBoost
+- Print key results and store metrics in variables (e.g., mae, rmse, f1_score)
+- Created variables persist to next iteration
 
 Output ONLY the Python code, wrapped in ```python code blocks.
 """
@@ -735,24 +733,22 @@ Your code failed with an error. Fix it.
   Note: Missing packages are auto-installed, so if you see ModuleNotFoundError, just wait - it will retry automatically
 {previous_output_context}
 ## Task
-Analyze the error and fix the code. Common issues:
-- **NameError (undefined variable)** - define ALL variables you use
-  - Common: `STATUS_OK` from hyperopt → add `from hyperopt import STATUS_OK`
-  - target_column, model variables, etc.
-- **KeyError (column name)** - DO NOT GUESS column names! First inspect the dataframe: print(df.columns), df.head(), df.info()
-- **Missing imports** - add all necessary imports at the top
-  - hyperopt: `from hyperopt import fmin, tpe, hp, Trials, STATUS_OK`
-  - sklearn, lightgbm, etc.
-- **AttributeError** - Check object types and available methods
-- Incorrect variable names - check spelling and case
-- Data type mismatches - ensure correct data types
-- Index errors - verify index/column existence before accessing
+Fix the code by addressing the root cause, not symptoms:
 
-**IMPORTANT:**
-- If NameError: check what's undefined and import/define it
-- If KeyError: add code to INSPECT the dataframe structure first, then use ACTUAL column names
-- Use whatever libraries make sense - they'll be installed if needed
-- Keep output clean: use verbose=-1 for LightGBM, verbosity=0 for XGBoost, warnings.filterwarnings('ignore')
+Common error patterns and fixes:
+- **NameError** → Something is used but not defined. Either:
+  - Import it (check library docs for what to import)
+  - Define it as a variable
+  - Check if it's a typo
+- **KeyError** → Column/key doesn't exist. Inspect first: df.columns, df.head()
+- **AttributeError** → Object doesn't have that method. Check type and available methods.
+- **TypeError** → Wrong type passed. Check what function expects.
+
+General debugging approach:
+1. Read the error message - it tells you exactly what's wrong
+2. Look at the traceback line number - that's where it failed
+3. Check what's available (imports, variables, columns)
+4. Fix the actual problem, don't work around it
 
 Output ONLY the FIXED Python code, wrapped in ```python code blocks.
 """
