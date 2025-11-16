@@ -49,6 +49,10 @@ class ExperimentOrchestrator:
         self.executor = None  # Created when run() is called
         self.research = get_research_assistant()
 
+        # Get LLM for query generation and other tasks
+        from .llm import get_llm
+        self.llm = get_llm()
+
         self.iteration = 0
         self.experiment_history = []
         self.best_metric = None
@@ -235,14 +239,21 @@ The PI wants to do initial exploration. Write Python code to implement this:
 ## PI's Request:
 {exploration_plan}
 
+## Problem Statement (for reference):
+{problem_statement}
+
 ## Available in execution context:
 - Libraries: pandas (pd), numpy (np), pathlib.Path
 - Variables: {list(self.executor.data_context.keys())}
+  (You can use any of these variables directly in your code)
 
 ## Requirements:
 - Write exploratory code (e.g., .info(), .head(), .describe(), basic stats)
+- DEFINE ALL VARIABLES YOU USE - don't assume variables exist unless they're in the available context above
+- DO NOT GUESS at column names - inspect dataframes first (e.g., print(df.columns), df.head())
 - Include clear print statements showing what you find
 - Focus on understanding data structure and the problem
+- Include necessary imports if you use any libraries beyond what's already imported
 
 Output ONLY the Python code, wrapped in ```python code blocks.
 """
@@ -256,9 +267,13 @@ Output ONLY the Python code, wrapped in ```python code blocks.
 
         code = extract_code_from_text(code_output)
 
-        # Execute exploration
+        # Execute exploration with retry on failure
         print("⚙️  Executing exploration...\n")
-        results = self.executor.execute(code, description="Bootstrap exploration")
+        results = self._execute_with_retry(
+            code=code,
+            approach=exploration_plan,
+            max_retries=2
+        )
 
         if results['success']:
             print("✅ Exploration successful!\n")
@@ -267,7 +282,7 @@ Output ONLY the Python code, wrapped in ```python code blocks.
             print(results['output'])
             print("-" * 60)
         else:
-            print("❌ Exploration failed:")
+            print("❌ Exploration failed after retries:")
             print(results['error'])
             # Continue anyway - PI can recruit based on problem statement
 
