@@ -804,10 +804,15 @@ Lead: Ask 1-2 questions, then synthesize proposals.
                     previous_output_context = f"\n## Previous Iteration Output:\n```\n{output}\n```\n"
 
         task = f"""
-The team has discussed what to implement. Write Python code to implement their plan.
+The team has proposed what to implement, but they may mention columns that don't exist.
 
-## Team's Discussion:
+## Team's Proposal:
 {approach}
+
+## YOUR JOB:
+1. First check what columns actually exist (see Previous Iteration Output or add print(df.columns))
+2. Implement the team's ideas using ONLY columns that actually exist
+3. Adapt their proposals to work with the real data
 
 ## Problem Statement (for reference):
 {self.problem_statement}
@@ -815,11 +820,9 @@ The team has discussed what to implement. Write Python code to implement their p
 ## Available in execution context:
 - Pre-imported libraries: pandas (pd), numpy (np), pathlib.Path
 - Variables: {list(self.executor.data_context.keys())}
-  (You can use any of these variables directly in your code)
 {previous_output_context}
 ## Requirements:
-- Use variables from "Available in execution context" above
-- Column names: Check "Previous Iteration Output" for df.columns, or add print(df.columns)
+- Check df.columns BEFORE using any column names
 - GPU available - use it when training
 
 Output ONLY the Python code, wrapped in ```python code blocks.
