@@ -65,18 +65,20 @@ class CodeExecutor:
         old_stdout = sys.stdout
         old_stderr = sys.stderr
 
-        # Prepare execution environment
-        exec_globals = {
+        # Prepare execution environment with SINGLE namespace
+        # This ensures that locals() in the executed code sees the data_context
+        exec_namespace = {
             'pd': pd,
             'np': np,
             'Path': Path,
             '__builtins__': __builtins__,
         }
 
-        # Add data context
-        exec_globals.update(self.data_context)
+        # Add data context to namespace
+        exec_namespace.update(self.data_context)
 
-        exec_locals = {}
+        # Track initial keys to identify new variables created during execution
+        initial_keys = set(exec_namespace.keys())
 
         result = {
             'success': False,
@@ -92,8 +94,9 @@ class CodeExecutor:
             sys.stdout = stdout_capture
             sys.stderr = stderr_capture
 
-            # Execute code
-            exec(code, exec_globals, exec_locals)
+            # Execute code with single namespace (used for both globals and locals)
+            # This makes locals() in the code return the namespace with data_context
+            exec(code, exec_namespace)
 
             result['success'] = True
             full_output = stdout_capture.getvalue()
@@ -104,16 +107,16 @@ class CodeExecutor:
                 result['output_truncated'] = True
                 result['original_output_length'] = len(full_output)
 
-            # Extract new variables (skip private/builtin)
+            # Extract NEW variables created during execution (skip private/builtin)
             result['variables'] = {
-                k: v for k, v in exec_locals.items()
-                if not k.startswith('_')
+                k: v for k, v in exec_namespace.items()
+                if k not in initial_keys and not k.startswith('_')
             }
 
-            # Try to extract metrics (look for common metric variables)
+            # Try to extract metrics (look for common metric variables in entire namespace)
             metric_names = ['mae', 'rmse', 'f1', 'accuracy', 'score', 'cv_scores', 'error']
             result['metrics'] = {
-                k: v for k, v in exec_locals.items()
+                k: v for k, v in exec_namespace.items()
                 if any(metric in k.lower() for metric in metric_names)
             }
 
@@ -149,7 +152,7 @@ class CodeExecutor:
 
         # Update data context with new variables
         if result['success']:
-            self.data_context.update(exec_locals)
+            self.data_context.update(result['variables'])
 
         # Store in history
         self.execution_history.append(result)
