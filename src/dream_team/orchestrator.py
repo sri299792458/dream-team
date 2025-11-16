@@ -507,15 +507,18 @@ Only output the agent specifications, nothing else.
         all_papers = []
         for agent in self.team_members:
             try:
-                # First iteration only: search for foundational review papers
-                # All later iterations: search for specific papers
-                is_first_search = len(agent.knowledge_base.papers) == 0
+                # Multi-stage citation-aware search strategy:
+                # Stage 1 (0 papers): Highly-cited reviews
+                # Stage 2 (1-3 papers): Backward citations (what did reviews cite?)
+                # Stage 3+ (4+ papers): Forward citations + recent work
+                num_papers_in_kb = len(agent.knowledge_base.papers)
 
-                # Get existing paper titles to avoid duplicates
+                # Get existing paper titles and IDs to avoid duplicates
                 existing_titles = [p.title for p in agent.knowledge_base.papers]
+                existing_paper_ids = [p.semantic_scholar_id for p in agent.knowledge_base.papers if p.semantic_scholar_id]
 
-                if is_first_search:
-                    # Search for gold standard review papers and meta-analyses
+                # STAGE 1: Highly-cited reviews and foundational papers
+                if num_papers_in_kb == 0:
                     query_prompt = f"""
 Generate a search query to find foundational review papers in THIS SPECIFIC expert's unique domain.
 
@@ -535,11 +538,58 @@ Focus on THEIR SPECIFIC DOMAIN. Each expert should search different topics.
 
 Output ONLY the search query (2-5 words).
 """
+                    search_query = self.llm.generate(query_prompt, temperature=0.3).strip().strip('"\'')
+                    print(f"   {agent.title} [Stage 1: Highly-cited reviews] '{search_query}'")
+
+                    # Search with wider year range, then sort by citations
+                    raw_results = self.research.ss_api.search(
+                        query=search_query,
+                        limit=20,  # Get more results
+                        year_range=(2010, 2025)  # Wide range to catch classics
+                    )
+
+                    # Sort by citation count (descending) to prioritize seminal/influential papers
+                    raw_results.sort(key=lambda p: p.citation_count, reverse=True)
+                    papers_to_analyze = raw_results[:3]  # Take top 3 most cited
+
+                    papers = []
+                    for result in papers_to_analyze:
+                        paper = result.to_paper()
+                        papers.append(paper)
+
+                    print(f"      Found {len(papers)} highly-cited papers (avg citations: {sum(p.citation_count for p in raw_results[:3])/max(len(raw_results[:3]), 1):.0f})")
+
+                # STAGE 2: Backward citation search (what did the reviews cite?)
+                elif num_papers_in_kb <= 3:
+                    print(f"   {agent.title} [Stage 2: Backward citations from reviews]")
+
+                    # Get references from the most highly-cited paper in their KB
+                    most_cited_paper = max(agent.knowledge_base.papers, key=lambda p: p.semantic_scholar_id and 1000 or 0)
+
+                    if most_cited_paper.semantic_scholar_id:
+                        # Get papers this review cites (backward search)
+                        raw_results = self.research.ss_api.get_references(
+                            paper_id=most_cited_paper.semantic_scholar_id,
+                            limit=20
+                        )
+
+                        # Sort by citation count to get seminal works
+                        raw_results.sort(key=lambda p: p.citation_count, reverse=True)
+                        papers_to_analyze = [p for p in raw_results[:5] if p.paper_id not in existing_paper_ids][:2]
+
+                        papers = [p.to_paper() for p in papers_to_analyze]
+                        print(f"      Found {len(papers)} seminal papers from references")
+                    else:
+                        papers = []
+                        print(f"      No paper ID available for backward search")
+
+                # STAGE 3+: Forward citations + recent work
                 else:
-                    # Search for specific papers based on current problem + what we don't have yet
+                    print(f"   {agent.title} [Stage 3: Recent work & forward citations]")
+
                     existing_papers_summary = ", ".join([p.title[:50] for p in agent.knowledge_base.papers[:3]])
                     query_prompt = f"""
-Generate a NEW search query for papers this expert hasn't found yet.
+Generate a search query for RECENT papers (2022-2025) on a specific aspect of this expert's domain.
 
 Expert: {agent.title}
 Expertise: {agent.expertise}
@@ -547,31 +597,28 @@ Problem: {problem_statement[:200]}
 Current approach: {history_context[:300] if history_context else "Baseline model"}
 Papers already found: {existing_papers_summary}
 
-Generate a search query (2-5 words) for NEW papers that:
-1. Are different from what they already have
-2. Address specific gaps or challenges in the current approach
-3. Are relevant to this expert's unique domain
+Generate a search query (2-5 words) for RECENT papers that:
+1. Address specific challenges in the current approach
+2. Are different from what they already have
+3. Are relevant to this expert's domain
 
 Focus on a DIFFERENT aspect than their previous searches.
 
 Output ONLY the search query (2-5 words).
 """
+                    search_query = self.llm.generate(query_prompt, temperature=0.5).strip().strip('"\'')
+                    print(f"      Query: '{search_query}'")
 
-                search_query = self.llm.generate(query_prompt, temperature=0.5).strip().strip('"\'')
-                search_type = "foundational reviews" if is_first_search else "targeted research"
-                print(f"   {agent.title} searching {search_type}: '{search_query}'")
+                    # Recent papers only
+                    raw_results = self.research.ss_api.search(
+                        query=search_query,
+                        limit=10,
+                        year_range=(2022, 2025)
+                    )
 
-                # More papers for foundational reviews, fewer for specific searches
-                num_papers = 3 if is_first_search else 2
-                # Wider year range for foundational reviews to catch seminal papers
-                year_range = (2015, 2025) if is_first_search else (2020, 2025)
-
-                papers = self.research.research_topic(
-                    query=search_query,
-                    context=f"{agent.expertise} - looking for {'foundational review papers' if is_first_search else 'specific relevant papers'}",
-                    num_papers=num_papers,
-                    year_range=year_range
-                )
+                    papers_to_analyze = [p for p in raw_results[:2] if p.title not in existing_titles]
+                    papers = [p.to_paper() for p in papers_to_analyze]
+                    print(f"      Found {len(papers)} recent papers")
 
                 if papers:
                     # Add NEW papers to agent's knowledge base (avoid duplicates)
@@ -597,7 +644,12 @@ Output ONLY the search query (2-5 words).
         if all_papers:
             research_context = "\n## Domain Research (searched by team members):\n"
             for agent_title, paper in all_papers:
-                research_context += f"\n**[{agent_title}]** {paper.title} ({', '.join(paper.authors[:2])} et al., {paper.year})\n"
+                # Show citation count to indicate paper influence/quality
+                citations_info = ""
+                if paper.citation_count > 0:
+                    citations_info = f" [{paper.citation_count} cites]"
+
+                research_context += f"\n**[{agent_title}]** {paper.title}{citations_info} ({', '.join(paper.authors[:2])} et al., {paper.year})\n"
                 research_context += f"   {paper.abstract[:200]}...\n"
             research_context += "\n"
             print(f"✅ Team found {len(all_papers)} domain-specific papers total\n")

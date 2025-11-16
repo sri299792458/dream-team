@@ -31,6 +31,7 @@ class PaperResult:
             year=self.year,
             abstract=self.abstract,
             semantic_scholar_id=self.paper_id,
+            citation_count=self.citation_count,
             relevance_score=0.0  # To be computed
         )
 
@@ -153,6 +154,98 @@ class SemanticScholarAPI:
             print(f"⚠️  Could not fetch paper {paper_id}: {e}")
             return None
 
+    def get_citations(self, paper_id: str, limit: int = 10) -> List[PaperResult]:
+        """
+        Get papers that cite this paper (forward citation search).
+
+        Useful for finding recent work building on seminal papers.
+        """
+        fields = ["paperId", "title", "authors", "year", "abstract",
+                 "citationCount", "influentialCitationCount", "url"]
+
+        try:
+            time.sleep(self.rate_limit_delay)
+            response = self.session.get(
+                f"{self.BASE_URL}/paper/{paper_id}/citations",
+                params={
+                    "fields": ",".join(fields),
+                    "limit": limit
+                },
+                timeout=10
+            )
+            response.raise_for_status()
+
+            data = response.json()
+            results = []
+
+            for item in data.get("data", []):
+                paper_data = item.get("citingPaper", {})
+                if not paper_data.get("abstract"):
+                    continue
+
+                results.append(PaperResult(
+                    paper_id=paper_data["paperId"],
+                    title=paper_data["title"],
+                    authors=[a.get("name", "Unknown") for a in paper_data.get("authors", [])],
+                    year=paper_data.get("year", 0),
+                    abstract=paper_data.get("abstract", ""),
+                    citation_count=paper_data.get("citationCount", 0),
+                    influential_citation_count=paper_data.get("influentialCitationCount", 0),
+                    url=paper_data.get("url", "")
+                ))
+
+            return results
+
+        except requests.exceptions.RequestException as e:
+            print(f"⚠️  Could not fetch citations for {paper_id}: {e}")
+            return []
+
+    def get_references(self, paper_id: str, limit: int = 10) -> List[PaperResult]:
+        """
+        Get papers that this paper cites (backward citation search).
+
+        Useful for finding seminal works from review papers.
+        """
+        fields = ["paperId", "title", "authors", "year", "abstract",
+                 "citationCount", "influentialCitationCount", "url"]
+
+        try:
+            time.sleep(self.rate_limit_delay)
+            response = self.session.get(
+                f"{self.BASE_URL}/paper/{paper_id}/references",
+                params={
+                    "fields": ",".join(fields),
+                    "limit": limit
+                },
+                timeout=10
+            )
+            response.raise_for_status()
+
+            data = response.json()
+            results = []
+
+            for item in data.get("data", []):
+                paper_data = item.get("citedPaper", {})
+                if not paper_data.get("abstract"):
+                    continue
+
+                results.append(PaperResult(
+                    paper_id=paper_data["paperId"],
+                    title=paper_data["title"],
+                    authors=[a.get("name", "Unknown") for a in paper_data.get("authors", [])],
+                    year=paper_data.get("year", 0),
+                    abstract=paper_data.get("abstract", ""),
+                    citation_count=paper_data.get("citationCount", 0),
+                    influential_citation_count=paper_data.get("influentialCitationCount", 0),
+                    url=paper_data.get("url", "")
+                ))
+
+            return results
+
+        except requests.exceptions.RequestException as e:
+            print(f"⚠️  Could not fetch references for {paper_id}: {e}")
+            return []
+
 
 class ResearchAssistant:
     """High-level research operations using Semantic Scholar + LLM"""
@@ -228,7 +321,8 @@ Respond in JSON format:
                     key_findings=analysis.get("key_findings", []),
                     techniques=analysis.get("techniques", []),
                     relevance_score=analysis.get("relevance_score", 0.0),
-                    semantic_scholar_id=result.paper_id
+                    semantic_scholar_id=result.paper_id,
+                    citation_count=result.citation_count
                 )
 
                 papers.append(paper)
@@ -242,6 +336,7 @@ Respond in JSON format:
                     year=result.year,
                     abstract=result.abstract,
                     semantic_scholar_id=result.paper_id,
+                    citation_count=result.citation_count,
                     relevance_score=0.5
                 )
                 papers.append(paper)

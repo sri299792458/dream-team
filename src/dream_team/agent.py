@@ -21,6 +21,7 @@ class Paper:
     techniques: List[str] = field(default_factory=list)
     relevance_score: float = 0.0
     semantic_scholar_id: Optional[str] = None
+    citation_count: int = 0
     applied: bool = False
     impact_notes: Optional[str] = None
 
@@ -32,6 +33,7 @@ class Paper:
             "key_findings": self.key_findings,
             "techniques": self.techniques,
             "relevance": self.relevance_score,
+            "citation_count": self.citation_count,
             "applied": self.applied,
             "impact": self.impact_notes
         }
