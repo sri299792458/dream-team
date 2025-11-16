@@ -101,23 +101,51 @@ Keep it concise (2-3 paragraphs).
                 # Build context from transcript
                 context = self._build_context()
 
-                member_prompt = f"""You are participating in a team meeting.
+                # Step 1: Agent drafts proposal based on expertise
+                draft_prompt = f"""You are participating in a team meeting.
 
 Agenda: {agenda}
 
 Discussion so far:
 {context}
 
-Provide your input as {member.title}. Draw on your expertise and knowledge base.
-Be specific and actionable. If relevant, cite papers or techniques you know.
+Draft your proposal as {member.title}. What technique/approach would you suggest?
+Keep it concise (1-2 paragraphs).
+"""
+
+                draft_proposal = self.llm.generate(
+                    draft_prompt,
+                    system_instruction=member.prompt,
+                    temperature=temperature
+                )
+
+                # Step 2: Search papers to verify/support the proposal
+                if self.research_api and len(draft_proposal) > 50:
+                    self._search_papers_to_verify(member, draft_proposal)
+
+                # Step 3: Generate final proposal with citations
+                final_prompt = f"""You are participating in a team meeting.
+
+Agenda: {agenda}
+
+Discussion so far:
+{context}
+
+Your draft proposal:
+{draft_proposal}
+
+Your knowledge base now contains relevant papers.
+Finalize your proposal, **citing specific papers to ground your recommendations in research.**
+
+Format citations as: (Author et al., Year)
 
 Keep your response focused (1-2 paragraphs).
 """
 
                 response = self.llm.generate(
-                    member_prompt,
+                    final_prompt,
                     system_instruction=member.prompt,
-                    temperature=temperature
+                    temperature=temperature * 0.9  # Slightly more focused
                 )
 
                 self.add_message(member.title, response)
@@ -125,10 +153,6 @@ Keep your response focused (1-2 paragraphs).
 
                 print(f"💬 {member.title}:")
                 print(f"{response}\n")
-
-                # On-demand paper search: search for papers related to what agent just proposed
-                if self.research_api and len(response) > 50:  # Only if meaningful contribution
-                    self._search_papers_for_proposal(member, response)
 
             # Team lead synthesizes
             synthesis_prompt = f"""You are synthesizing the team discussion.
@@ -177,16 +201,16 @@ Provide in JSON format:
             for msg in recent
         ])
 
-    def _search_papers_for_proposal(self, agent, proposal: str):
-        """Search for papers related to agent's proposal and add to their knowledge base"""
+    def _search_papers_to_verify(self, agent, draft_proposal: str):
+        """Search for papers to verify/support agent's draft proposal"""
         try:
-            # Extract search query from proposal
-            query_prompt = f"""Extract a concise search query (2-4 words) for finding relevant research papers.
+            # Extract search query from draft proposal
+            query_prompt = f"""Extract a concise search query (2-4 words) for finding papers to verify this proposal.
 
-Agent's proposal:
-{proposal[:500]}
+Draft proposal:
+{draft_proposal[:500]}
 
-Generate a search query that captures the main technique/approach they're proposing.
+Generate a search query that captures the main technique/approach being proposed.
 Output ONLY the search query (2-4 words).
 """
             search_query = self.llm.generate(query_prompt, temperature=0.3).strip().strip('"\'')
@@ -195,7 +219,7 @@ Output ONLY the search query (2-4 words).
             if len(search_query) > 50:
                 search_query = search_query[:50]
 
-            print(f"   🔍 Searching papers for '{search_query}'...")
+            print(f"   🔍 {agent.title} verifying with papers: '{search_query}'...")
 
             # Search for recent, relevant papers
             raw_results = self.research_api.search(
@@ -218,13 +242,13 @@ Output ONLY the search query (2-4 words).
                         added += 1
 
                 if added == 0:
-                    print(f"      (all papers already in knowledge base)")
+                    print(f"      (papers already in knowledge base)")
             else:
                 print(f"      (no papers found)")
 
         except Exception as e:
             # Don't break meeting if search fails
-            print(f"      ⚠️  Paper search failed: {e}")
+            print(f"      ⚠️  Search failed: {e}")
 
 
 class IndividualMeeting(Meeting):
