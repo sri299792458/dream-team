@@ -19,18 +19,20 @@ from pathlib import Path
 class CodeExecutor:
     """Executes Python code in a controlled environment"""
 
-    def __init__(self, data_context: Dict[str, Any] = None, auto_install: bool = True):
+    def __init__(self, data_context: Dict[str, Any] = None, auto_install: bool = True, max_output_length: int = 10000):
         """
         Initialize executor with data context.
 
         Args:
             data_context: Dictionary of data/variables available to executed code
             auto_install: Whether to automatically install missing packages (default: True)
+            max_output_length: Maximum length of output to store (default: 10000 chars)
         """
         self.data_context = data_context or {}
         self.execution_history = []
         self.auto_install = auto_install
         self.installed_packages = set()  # Track what we've installed
+        self.max_output_length = max_output_length
 
     def execute(
         self,
@@ -94,7 +96,13 @@ class CodeExecutor:
             exec(code, exec_globals, exec_locals)
 
             result['success'] = True
-            result['output'] = stdout_capture.getvalue()
+            full_output = stdout_capture.getvalue()
+
+            # Limit output length to prevent context overload
+            result['output'] = self._truncate_output(full_output)
+            if len(full_output) > self.max_output_length:
+                result['output_truncated'] = True
+                result['original_output_length'] = len(full_output)
 
             # Extract new variables (skip private/builtin)
             result['variables'] = {
@@ -109,7 +117,10 @@ class CodeExecutor:
                 if any(metric in k.lower() for metric in metric_names)
             }
 
-            print(f"   ✅ Success")
+            truncation_note = ""
+            if result.get('output_truncated'):
+                truncation_note = f" (output truncated: {result['original_output_length']} → {len(result['output'])} chars)"
+            print(f"   ✅ Success{truncation_note}")
             if result['output']:
                 print(f"   Output: {result['output'][:200]}...")
 
@@ -117,7 +128,12 @@ class CodeExecutor:
             result['success'] = False
             result['error'] = str(e)
             result['traceback'] = traceback.format_exc()
-            result['output'] = stdout_capture.getvalue()
+
+            full_output = stdout_capture.getvalue()
+            result['output'] = self._truncate_output(full_output)
+            if len(full_output) > self.max_output_length:
+                result['output_truncated'] = True
+                result['original_output_length'] = len(full_output)
 
             print(f"   ❌ Error: {e}")
 
@@ -177,6 +193,35 @@ class CodeExecutor:
     def set_variable(self, name: str, value: Any):
         """Set a variable in the execution context"""
         self.data_context[name] = value
+
+    def _truncate_output(self, output: str) -> str:
+        """
+        Truncate output to max_output_length, keeping most recent content.
+
+        When output is too long (e.g., verbose library warnings), we keep:
+        - First 2000 chars (shows initial setup/imports)
+        - Last (max_output_length - 2000) chars (shows final results)
+
+        This prevents context overload from verbose libraries like LightGBM
+        while preserving the most important information.
+        """
+        if len(output) <= self.max_output_length:
+            return output
+
+        # Keep first 2000 chars (initial output) and last N chars (final results)
+        first_chunk_size = 2000
+        last_chunk_size = self.max_output_length - first_chunk_size - 100  # Leave room for separator
+
+        first_chunk = output[:first_chunk_size]
+        last_chunk = output[-last_chunk_size:]
+
+        truncated_lines = output[first_chunk_size:-last_chunk_size].count('\n')
+
+        return (
+            f"{first_chunk}\n"
+            f"\n... [Truncated {truncated_lines} lines of verbose output] ...\n\n"
+            f"{last_chunk}"
+        )
 
     def get_metrics_history(self) -> list:
         """Extract all metrics from execution history"""

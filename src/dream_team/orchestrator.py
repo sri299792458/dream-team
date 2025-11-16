@@ -252,6 +252,7 @@ The PI wants to do initial exploration. Write Python code to implement this:
 - DEFINE ALL VARIABLES YOU USE - don't assume variables exist unless they're in the available context above
 - DO NOT GUESS at column names - inspect dataframes first (e.g., print(df.columns), df.head())
 - Use whatever libraries you need - if not installed, they will be installed automatically
+- Suppress unnecessary warnings: add `import warnings; warnings.filterwarnings('ignore')` if needed
 - Include clear print statements showing what you find
 - Focus on understanding data structure and the problem
 
@@ -564,7 +565,12 @@ The team has discussed what to implement. Write Python code to implement their p
 - DO NOT GUESS at column names - if you need to know the schema, inspect the dataframes first (e.g., print(df.columns))
 - Use whatever libraries you think are best for the task - missing packages will be installed automatically
 - Include necessary imports at the top of your code
-- Include print statements for key results
+- **Suppress verbose output** - keep logs clean and focused:
+  - For LightGBM: use `verbose=-1` parameter (e.g., lgb.LGBMRegressor(verbose=-1))
+  - For XGBoost: use `verbosity=0` parameter (e.g., xgb.XGBRegressor(verbosity=0))
+  - For scikit-learn: most models are quiet by default
+  - To suppress warnings: add `import warnings; warnings.filterwarnings('ignore')` at the top
+- Include print statements for key results (e.g., "Final MAE: 2.34")
 - Store metrics in variables (e.g., mae, cv_scores, f1_score)
 - Variables you create will persist to the next iteration
 
@@ -733,6 +739,7 @@ Analyze the error and fix the code. Common issues:
 **IMPORTANT:**
 - If KeyError: add code to INSPECT the dataframe structure first, then use ACTUAL column names
 - Use whatever libraries make sense - they'll be installed if needed
+- Keep output clean: use verbose=-1 for LightGBM, verbosity=0 for XGBoost, warnings.filterwarnings('ignore')
 
 Output ONLY the FIXED Python code, wrapped in ```python code blocks.
 """
