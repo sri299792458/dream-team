@@ -747,27 +747,34 @@ Output ONLY the search query (2-5 words).
         else:
             print("   No papers found across all searches\n")
 
+        # Extract column information from bootstrap output if available
+        columns_summary = ""
+        if self.experiment_history and self.experiment_history[0].get('iteration', -1) == 0:
+            output = self.experiment_history[0]['results'].get('output', '')
+            # Extract lines that show "Columns of X:"
+            columns_lines = [line for line in output.split('\n') if 'Columns of' in line or (line.startswith('[') and 'batch_id' in line or 'sku_id' in line or 'site_id' in line or 'region_id' in line)]
+            if columns_lines:
+                columns_summary = "\n## AVAILABLE COLUMNS (from exploration - ONLY use these):\n" + "\n".join(columns_lines[:20]) + "\n"
+
         agenda = f"""
 **BE CONCISE.**
 
 ## Problem:
 {problem_statement}
 
-## Available Data:
+## Available Dataframes:
 {list(self.executor.data_context.keys())}
-
+{columns_summary}
 {history_context}
 {research_context}
 
 ## Roles:
-- **Team Members**: Propose what to implement based on YOUR research AND what's in the data
+- **Team Members**: Propose features using ONLY the columns listed above
 - **Lead**: Ask questions, then synthesize proposals
 
 ## Task:
-IMPORTANT: Check exploration output to see what columns actually exist before proposing features.
-
 Team members: Propose what to implement (2-3 sentences), citing YOUR field's research.
-Lead: Ask 1-2 questions, then synthesize into a plan.
+Lead: Ask 1-2 questions, then synthesize proposals.
 """
 
         meeting = TeamMeeting(save_dir=str(self.results_dir / 'meetings'))
