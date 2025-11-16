@@ -46,7 +46,10 @@ class SemanticScholarAPI:
         if self.api_key:
             self.session.headers.update({"x-api-key": self.api_key})
 
-        self.rate_limit_delay = 1.0 if not api_key else 0.1  # Seconds between requests
+        # Conservative delays to avoid rate limiting
+        # Free tier: 100 requests/5min = 1 request every 3 seconds
+        # With key: 5000 requests/5min = 1 request every 0.06 seconds, but be conservative
+        self.rate_limit_delay = 3.0 if not api_key else 1.0  # Seconds between requests
 
     def search(
         self,
@@ -70,38 +73,57 @@ class SemanticScholarAPI:
         if year_range:
             params["year"] = f"{year_range[0]}-{year_range[1]}"
 
-        try:
-            time.sleep(self.rate_limit_delay)
-            response = self.session.get(
-                f"{self.BASE_URL}/paper/search",
-                params=params,
-                timeout=10
-            )
-            response.raise_for_status()
+        # Retry with exponential backoff for rate limiting
+        max_retries = 2
+        for attempt in range(max_retries + 1):
+            try:
+                if attempt > 0:
+                    # Exponential backoff: 5s, 10s
+                    backoff_delay = 5 * (2 ** (attempt - 1))
+                    print(f"   Retrying after {backoff_delay}s (attempt {attempt + 1}/{max_retries + 1})...")
+                    time.sleep(backoff_delay)
+                else:
+                    time.sleep(self.rate_limit_delay)
 
-            data = response.json()
-            results = []
+                response = self.session.get(
+                    f"{self.BASE_URL}/paper/search",
+                    params=params,
+                    timeout=10
+                )
+                response.raise_for_status()
 
-            for paper_data in data.get("data", []):
-                if not paper_data.get("abstract"):
-                    continue  # Skip papers without abstracts
+                data = response.json()
+                results = []
 
-                results.append(PaperResult(
-                    paper_id=paper_data["paperId"],
-                    title=paper_data["title"],
-                    authors=[a.get("name", "Unknown") for a in paper_data.get("authors", [])],
-                    year=paper_data.get("year", 0),
-                    abstract=paper_data.get("abstract", ""),
-                    citation_count=paper_data.get("citationCount", 0),
-                    influential_citation_count=paper_data.get("influentialCitationCount", 0),
-                    url=paper_data.get("url", "")
-                ))
+                for paper_data in data.get("data", []):
+                    if not paper_data.get("abstract"):
+                        continue  # Skip papers without abstracts
 
-            return results
+                    results.append(PaperResult(
+                        paper_id=paper_data["paperId"],
+                        title=paper_data["title"],
+                        authors=[a.get("name", "Unknown") for a in paper_data.get("authors", [])],
+                        year=paper_data.get("year", 0),
+                        abstract=paper_data.get("abstract", ""),
+                        citation_count=paper_data.get("citationCount", 0),
+                        influential_citation_count=paper_data.get("influentialCitationCount", 0),
+                        url=paper_data.get("url", "")
+                    ))
 
-        except requests.exceptions.RequestException as e:
-            print(f"⚠️  Semantic Scholar API error: {e}")
-            return []
+                return results
+
+            except requests.exceptions.HTTPError as e:
+                if e.response.status_code == 429 and attempt < max_retries:
+                    # Rate limited - retry with backoff
+                    continue
+                else:
+                    print(f"⚠️  Semantic Scholar API error: {e}")
+                    return []
+            except requests.exceptions.RequestException as e:
+                print(f"⚠️  Semantic Scholar API error: {e}")
+                return []
+
+        return []  # All retries exhausted
 
     def get_paper(self, paper_id: str) -> Optional[PaperResult]:
         """Get specific paper by ID"""
@@ -239,10 +261,13 @@ _research_assistant = None
 
 def get_research_assistant() -> ResearchAssistant:
     """Get or create global research assistant"""
+    import os
     global _research_assistant
     if _research_assistant is None:
         from .llm import get_llm
-        ss_api = SemanticScholarAPI()
+        # Use API key from environment if available
+        api_key = os.getenv('SEMANTIC_SCHOLAR_API_KEY')
+        ss_api = SemanticScholarAPI(api_key=api_key)
         llm = get_llm()
         _research_assistant = ResearchAssistant(ss_api, llm)
     return _research_assistant

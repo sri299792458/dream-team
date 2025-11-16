@@ -278,19 +278,25 @@ Output ONLY the Python code, wrapped in ```python code blocks.
         research_summary = ""
         print("📚 Searching research literature to inform team composition...\n")
         try:
+            # Extract clean search query from problem statement
+            # Use first line or sentence, remove newlines
+            search_query = problem_statement.strip().split('\n')[0].strip()
+            if len(search_query) > 100:
+                search_query = search_query[:100]
+
             papers = self.research.research_topic(
-                query=problem_statement[:200],
+                query=search_query,
                 context="Understanding what methodologies and expertise are commonly used",
-                num_papers=3
+                num_papers=2  # Reduced to avoid rate limiting
             )
             if papers:
                 research_summary = "\n## Relevant Research Approaches:\n"
-                for paper in papers[:2]:  # Just 2 for bootstrap
-                    research_summary += f"- {paper.get('title', 'Unknown')}: "
-                    research_summary += f"{paper.get('abstract', 'No abstract')[:100]}...\n"
+                for paper in papers:
+                    research_summary += f"- {paper.title}: "
+                    research_summary += f"{paper.abstract[:100]}...\n"
                 research_summary += "\n"
         except Exception as e:
-            print(f"   Note: Research search failed: {e}\n")
+            print(f"   Note: Research search skipped (API rate limit or error): {e}\n")
 
         recruitment_task = f"""
 Based on the problem and exploration results, decide what expertise you need on your team.
@@ -774,17 +780,25 @@ Output ONLY the FIXED Python code, wrapped in ```python code blocks.
 
         # Research relevant papers to inform evolution
         print("📚 Researching latest approaches...\n")
-        papers = self.research.research_topic(
-            query=problem_statement[:200],
-            context=f"Current performance: {current_metrics}. Looking for new approaches.",
-            num_papers=5
-        )
-
         papers_summary = ""
-        if papers:
-            papers_summary = "\n## Research Findings:\n"
-            for paper in papers[:3]:
-                papers_summary += f"- {paper.get('title', 'Unknown')}: {paper.get('abstract', '')[:120]}...\n"
+        try:
+            # Extract clean search query from problem statement
+            search_query = problem_statement.strip().split('\n')[0].strip()
+            if len(search_query) > 100:
+                search_query = search_query[:100]
+
+            papers = self.research.research_topic(
+                query=search_query,
+                context=f"Current performance: {current_metrics}. Looking for new approaches.",
+                num_papers=3  # Reduced to avoid rate limiting
+            )
+
+            if papers:
+                papers_summary = "\n## Research Findings:\n"
+                for paper in papers:
+                    papers_summary += f"- {paper.title}: {paper.abstract[:120]}...\n"
+        except Exception as e:
+            print(f"   Note: Research search skipped (API rate limit or error): {e}\n")
 
         # PI analyzes team composition and decides what changes are needed
         current_team_info = "\n".join([
