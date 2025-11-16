@@ -298,8 +298,9 @@ Output ONLY the Python code, wrapped in ```python code blocks.
         print(f"\n{self.team_lead.title} reviewing exploration results and recruiting team...\n")
 
         # Fetch research to inform recruitment decisions
+        # Bootstrap always uses Stage 1: highly-cited review papers
         research_summary = ""
-        print("📚 Searching research literature to inform team composition...\n")
+        print("📚 Searching for highly-cited review papers on the problem...\n")
         try:
             # Use LLM to extract academic search terms from problem statement
             query_extraction_prompt = f"""
@@ -315,17 +316,87 @@ Examples: "shelf life prediction", "time series forecasting", "image classificat
             search_query = search_query.strip('"\'')
             print(f"   Search query: '{search_query}'")
 
-            papers = self.research.research_topic(
+            # Bootstrap: Search for highly-cited review papers (wider year range, sort by citations)
+            print(f"   Stage 1: Searching highly-cited papers on '{search_query}'...")
+            raw_results = self.research.ss_api.search(
                 query=search_query,
-                context="Understanding what methodologies and expertise are commonly used",
-                num_papers=2  # Reduced to avoid rate limiting
+                limit=15,
+                year_range=(2010, 2025)  # Wider range to find influential papers
             )
-            if papers:
-                research_summary = "\n## Relevant Research Approaches:\n"
-                for paper in papers:
-                    research_summary += f"- {paper.title}: "
-                    research_summary += f"{paper.abstract[:100]}...\n"
-                research_summary += "\n"
+
+            if raw_results:
+                # Sort by citation count to get most influential papers
+                raw_results.sort(key=lambda p: p.citation_count, reverse=True)
+                papers_to_analyze = raw_results[:3]  # Top 3 most cited
+
+                print(f"   Found {len(raw_results)} papers, analyzing top {len(papers_to_analyze)} by citations...")
+
+                # Use LLM to analyze relevance
+                from .agent import Paper
+                papers = []
+                for i, result in enumerate(papers_to_analyze):
+                    print(f"   Analyzing paper {i+1}: {result.title[:60]}... (citations: {result.citation_count})")
+
+                    analysis_prompt = f"""You are analyzing a scientific paper for relevance to a problem.
+
+Problem: {problem_statement[:300]}
+
+Paper Title: {result.title}
+Authors: {', '.join(result.authors)}
+Year: {result.year}
+Citations: {result.citation_count}
+Abstract: {result.abstract}
+
+Tasks:
+1. Rate relevance to the problem (0.0-1.0)
+2. Extract 2-3 key findings or methodologies
+3. Summarize applicability in one sentence
+
+Respond in JSON format:
+{{
+    "relevance_score": 0.0-1.0,
+    "key_findings": ["finding 1", "finding 2"],
+    "applicability": "brief summary"
+}}
+"""
+
+                    try:
+                        analysis = self.llm.generate_json(analysis_prompt, temperature=0.3)
+                        paper = Paper(
+                            title=result.title,
+                            authors=result.authors,
+                            year=result.year,
+                            abstract=result.abstract,
+                            key_findings=analysis.get("key_findings", []),
+                            relevance_score=analysis.get("relevance_score", 0.0),
+                            semantic_scholar_id=result.paper_id,
+                            citation_count=result.citation_count
+                        )
+                        papers.append(paper)
+                    except Exception as e:
+                        print(f"   ⚠️  Error analyzing paper: {e}")
+                        # Fallback: create paper without LLM analysis
+                        paper = Paper(
+                            title=result.title,
+                            authors=result.authors,
+                            year=result.year,
+                            abstract=result.abstract,
+                            semantic_scholar_id=result.paper_id,
+                            citation_count=result.citation_count,
+                            relevance_score=0.5
+                        )
+                        papers.append(paper)
+
+                if papers:
+                    research_summary = "\n## Highly-Cited Research on This Problem:\n"
+                    for paper in papers:
+                        research_summary += f"- {paper.title} ({paper.year}, {paper.citation_count} citations)\n"
+                        if paper.key_findings:
+                            research_summary += f"  Key findings: {'; '.join(paper.key_findings[:2])}\n"
+                    research_summary += "\n"
+            else:
+                print("   No papers found")
+
         except Exception as e:
             print(f"   Note: Research search skipped (API rate limit or error): {e}\n")
 
