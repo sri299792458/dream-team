@@ -568,12 +568,19 @@ Only output the agent specifications, nothing else.
             # Build history context with output from previous iteration
             output_preview = ""
             if last['results'].get('output'):
-                # Show last 1000 chars of output (most recent results)
                 output = last['results']['output']
-                if len(output) > 1000:
-                    output_preview = f"\n\nOutput (last 1000 chars):\n```\n...{output[-1000:]}\n```"
+                # For bootstrap (iteration 0), show FIRST 3000 chars to include column info
+                # For other iterations, show LAST 1000 chars (recent metrics)
+                if last.get('iteration', 0) == 0:
+                    if len(output) > 3000:
+                        output_preview = f"\n\nBootstrap Exploration Output (first 3000 chars):\n```\n{output[:3000]}...\n```"
+                    else:
+                        output_preview = f"\n\nBootstrap Exploration Output:\n```\n{output}\n```"
                 else:
-                    output_preview = f"\n\nOutput:\n```\n{output}\n```"
+                    if len(output) > 1000:
+                        output_preview = f"\n\nOutput (last 1000 chars):\n```\n...{output[-1000:]}\n```"
+                    else:
+                        output_preview = f"\n\nOutput:\n```\n{output}\n```"
 
             # Extract approach preview to avoid slicing syntax issues in f-string
             approach = last['approach']
@@ -753,14 +760,14 @@ Output ONLY the search query (2-5 words).
 {research_context}
 
 ## Roles:
-- **Team Members**: YOU propose what to implement, citing research from YOUR domain (shown above)
-- **Lead**: Ask questions, then synthesize team proposals into a plan
+- **Team Members**: Propose what to implement based on YOUR research AND what's in the data
+- **Lead**: Ask questions, then synthesize proposals
 
 ## Task:
-Team members: In 2-3 sentences, propose what should be implemented this iteration based on YOUR field's research.
-Lead: First ask 1-2 questions to guide discussion. After hearing proposals, synthesize into a plan.
+IMPORTANT: Check exploration output to see what columns actually exist before proposing features.
 
-Focus on WHAT to do, not HOW to code it.
+Team members: Propose what to implement (2-3 sentences), citing YOUR field's research.
+Lead: Ask 1-2 questions, then synthesize into a plan.
 """
 
         meeting = TeamMeeting(save_dir=str(self.results_dir / 'meetings'))
