@@ -15,10 +15,11 @@ import os
 class Meeting:
     """Base class for meetings"""
 
-    def __init__(self, save_dir: Optional[str] = None):
+    def __init__(self, save_dir: Optional[str] = None, research_api=None):
         self.save_dir = save_dir
         self.transcript = []
         self.llm = get_llm()
+        self.research_api = research_api  # Optional research API for on-demand paper search
 
     def add_message(self, agent_name: str, message: str):
         """Add message to transcript"""
@@ -125,6 +126,10 @@ Keep your response focused (1-2 paragraphs).
                 print(f"💬 {member.title}:")
                 print(f"{response}\n")
 
+                # On-demand paper search: search for papers related to what agent just proposed
+                if self.research_api and len(response) > 50:  # Only if meaningful contribution
+                    self._search_papers_for_proposal(member, response)
+
             # Team lead synthesizes
             synthesis_prompt = f"""You are synthesizing the team discussion.
 
@@ -171,6 +176,55 @@ Provide in JSON format:
             f"{msg['agent']}: {msg['message']}"
             for msg in recent
         ])
+
+    def _search_papers_for_proposal(self, agent, proposal: str):
+        """Search for papers related to agent's proposal and add to their knowledge base"""
+        try:
+            # Extract search query from proposal
+            query_prompt = f"""Extract a concise search query (2-4 words) for finding relevant research papers.
+
+Agent's proposal:
+{proposal[:500]}
+
+Generate a search query that captures the main technique/approach they're proposing.
+Output ONLY the search query (2-4 words).
+"""
+            search_query = self.llm.generate(query_prompt, temperature=0.3).strip().strip('"\'')
+
+            # Limit search query length
+            if len(search_query) > 50:
+                search_query = search_query[:50]
+
+            print(f"   🔍 Searching papers for '{search_query}'...")
+
+            # Search for recent, relevant papers
+            raw_results = self.research_api.search(
+                query=search_query,
+                limit=5,
+                year_range=(2018, 2025)  # Recent papers only
+            )
+
+            if raw_results:
+                # Get existing papers to avoid duplicates
+                existing_titles = [p.title for p in agent.knowledge_base.papers]
+
+                # Add top 2 new papers
+                added = 0
+                for result in raw_results[:2]:
+                    if result.title not in existing_titles:
+                        paper = result.to_paper()
+                        agent.knowledge_base.add_paper(paper)
+                        print(f"      ✓ {paper.title[:60]}... ({paper.year})")
+                        added += 1
+
+                if added == 0:
+                    print(f"      (all papers already in knowledge base)")
+            else:
+                print(f"      (no papers found)")
+
+        except Exception as e:
+            # Don't break meeting if search fails
+            print(f"      ⚠️  Paper search failed: {e}")
 
 
 class IndividualMeeting(Meeting):

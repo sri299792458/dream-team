@@ -651,9 +651,18 @@ Lead: Ask 1-2 questions, then synthesize proposals.
         print(f"   Dataframes: {list(self.executor.data_context.keys())}")
         if history_context:
             print(f"   Previous metrics: {last['metrics']}")
+            # Show what information is available from previous iteration
+            if not last['metrics'] or len(last['metrics']) == 0:
+                print(f"   ℹ️  No metrics yet - team will see exploration output from iteration {last.get('iteration', 0)}")
+                if last['results'].get('output'):
+                    output_len = len(last['results']['output'])
+                    print(f"   ℹ️  Output available: {output_len} chars (data exploration, column info, statistics)")
         print()
 
-        meeting = TeamMeeting(save_dir=str(self.results_dir / 'meetings'))
+        meeting = TeamMeeting(
+            save_dir=str(self.results_dir / 'meetings'),
+            research_api=self.research.ss_api if hasattr(self, 'research') else None
+        )
         summary = meeting.run(
             team_lead=self.team_lead,
             team_members=self.team_members,
