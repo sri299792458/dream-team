@@ -814,6 +814,10 @@ The team has discussed what to implement. Write Python code to implement their p
   - Don't assume column names - inspect with df.columns first
   - Don't assume variable names from previous iterations - check what's available above
   - Don't assume imports - explicitly import everything you use
+- GPU acceleration: A GPU is available - use it for models that support it:
+  - LightGBM: Add `device='gpu'` parameter (e.g., `lgb.LGBMRegressor(device='gpu', ...)`)
+  - XGBoost: Add `tree_method='gpu_hist'` parameter
+  - PyTorch/TensorFlow: Will automatically detect and use GPU
 - Suppress verbose output: warnings.filterwarnings('ignore'), verbose=-1 for LightGBM/XGBoost
 - Print key results and store metrics in variables (e.g., mae, rmse, f1_score)
 - Created variables persist to next iteration
@@ -972,6 +976,10 @@ Your code failed with an error. Fix it.
 {previous_output_context}
 ## Task
 Fix the code by addressing the root cause, not symptoms:
+
+**Important: GPU is available** - Use it for faster execution:
+- LightGBM: Add `device='gpu'` (e.g., `lgb.LGBMRegressor(device='gpu', ...)`)
+- XGBoost: Add `tree_method='gpu_hist'`
 
 Common error patterns and fixes:
 - **NameError** → Something is used but not defined. Either:
