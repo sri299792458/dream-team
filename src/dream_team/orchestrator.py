@@ -92,6 +92,9 @@ class ExperimentOrchestrator:
         # Initialize executor with data
         self.executor = CodeExecutor(data_context=data_context)
 
+        # Store problem statement for use in prompts
+        self.problem_statement = problem_statement
+
         # Check for resume
         start_iteration = 1
         if resume:
@@ -361,21 +364,79 @@ Format your response as a simple list, one team member per line.
         """
         Parse PI's recruitment plan and create agents.
 
-        For now, creates a default ML Strategist.
-        Future: Use LLM to parse plan and create custom agents.
+        Uses LLM to extract agent specifications from PI's plan.
         """
-        # Simple heuristic: if PI mentions ML/machine learning, add ML Strategist
-        # If mentions domain/food/chemistry, could add domain expert
-        # For now, default to ML Strategist
+        # Use LLM to parse the recruitment plan and extract agent definitions
+        parse_task = f"""
+Parse this recruitment plan and extract agent specifications.
 
-        ml_strategist = Agent(
-            title="ML Strategist",
-            expertise="machine learning algorithms, feature engineering, model selection, predictive modeling, research literature in ML/AI, state-of-the-art methods",
-            goal="design evidence-based predictive approaches grounded in research and best practices",
-            role="propose modeling strategies with citations to relevant research when appropriate"
+## Recruitment Plan:
+{recruitment_plan}
+
+## Your Task:
+For each team member mentioned, extract:
+- Title
+- Expertise
+- Role
+
+Output in this exact format (one agent per block):
+
+AGENT 1:
+Title: [exact title from plan]
+Expertise: [expertise description from plan]
+Role: [role description from plan]
+
+AGENT 2:
+Title: [exact title from plan]
+Expertise: [expertise description from plan]
+Role: [role description from plan]
+
+Only output the agent specifications, nothing else.
+"""
+
+        meeting = IndividualMeeting(save_dir=str(self.results_dir / 'meetings'))
+        parsed_output = meeting.run(
+            agent=self.team_lead,
+            task=parse_task,
+            num_iterations=1
         )
 
-        return [ml_strategist]
+        # Parse the structured output and create Agent objects
+        agents = []
+        current_agent = {}
+
+        for line in parsed_output.split('\n'):
+            line = line.strip()
+
+            if line.startswith('Title:'):
+                current_agent['title'] = line.replace('Title:', '').strip()
+            elif line.startswith('Expertise:'):
+                current_agent['expertise'] = line.replace('Expertise:', '').strip()
+            elif line.startswith('Role:'):
+                current_agent['role'] = line.replace('Role:', '').strip()
+
+                # When we have all three fields, create agent
+                if 'title' in current_agent and 'expertise' in current_agent and 'role' in current_agent:
+                    agent = Agent(
+                        title=current_agent['title'],
+                        expertise=current_agent['expertise'],
+                        goal=f"contribute specialized expertise to optimize the target metric",
+                        role=current_agent['role']
+                    )
+                    agents.append(agent)
+                    current_agent = {}  # Reset for next agent
+
+        # Fallback: if parsing failed, create a generic ML specialist
+        if not agents:
+            print("   ⚠️  Could not parse recruitment plan, creating default ML Strategist")
+            agents = [Agent(
+                title="ML Strategist",
+                expertise="machine learning, feature engineering, model selection, predictive modeling",
+                goal="design effective predictive approaches",
+                role="propose modeling strategies and analytical approaches"
+            )]
+
+        return agents
 
     def _team_planning_meeting(self, problem_statement: str) -> str:
         """Run team meeting to plan approach"""
@@ -396,7 +457,10 @@ Format your response as a simple list, one team member per line.
                 else:
                     output_preview = f"\n\nOutput:\n```\n{output}\n```"
 
-            history_context = f"\n## Previous Iteration:\nApproach: {last['approach'][:200]}...\nMetrics: {last['metrics']}{output_preview}\n"
+            # Extract approach preview to avoid slicing syntax issues in f-string
+            approach = last['approach']
+            approach_preview = approach[:200] + "..." if len(approach) > 200 else approach
+            history_context = f"\n## Previous Iteration:\nApproach: {approach_preview}\nMetrics: {last['metrics']}{output_preview}\n"
 
         agenda = f"""
 **BE CONCISE.** Decide what to implement this iteration.
@@ -445,6 +509,9 @@ The team has discussed what to implement. Write Python code to implement their p
 ## Team's Discussion:
 {approach}
 
+## Problem Statement (for reference):
+{self.problem_statement}
+
 ## Available in execution context:
 - Libraries: pandas (pd), numpy (np), pathlib.Path
 - Variables: {list(self.executor.data_context.keys())}
@@ -452,6 +519,9 @@ The team has discussed what to implement. Write Python code to implement their p
 
 ## Requirements:
 - Write complete, executable Python code that implements what the team discussed
+- DEFINE ALL VARIABLES YOU USE - don't assume variables exist unless they're in the available context above
+- If the problem statement mentions specific column names (e.g., target variable), use those exact names
+- Include necessary imports (sklearn, lightgbm, etc.) if you use them
 - Include print statements for key results
 - Store metrics in variables (e.g., mae, cv_scores, f1_score)
 - Variables you create will persist to the next iteration
@@ -567,6 +637,9 @@ Your code failed with an error. Fix it.
 ## Original Approach
 {approach}
 
+## Problem Statement (for reference):
+{self.problem_statement}
+
 ## Your Code That Failed
 ```python
 {failed_code}
@@ -578,13 +651,17 @@ Your code failed with an error. Fix it.
 ## Traceback
 {traceback}
 
+## Available in execution context:
+- Variables: {list(self.executor.data_context.keys())}
+
 ## Task
 Analyze the error and fix the code. Common issues:
-- Missing imports
-- Incorrect variable names
-- Data type mismatches
-- Index errors
-- Division by zero
+- **Undefined variables** - define ALL variables you use (e.g., target_column = 'column_name')
+- Missing imports - add necessary import statements
+- Incorrect variable names - check spelling and case
+- Data type mismatches - ensure correct data types
+- Index errors - verify index/column existence
+- Division by zero - add checks before division
 
 Output ONLY the FIXED Python code, wrapped in ```python code blocks.
 """
