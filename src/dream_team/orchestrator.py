@@ -500,6 +500,42 @@ Only output the agent specifications, nothing else.
             approach_preview = approach[:200] + "..." if len(approach) > 200 else approach
             history_context = f"\n## Previous Iteration:\nApproach: {approach_preview}\nMetrics: {last['metrics']}{output_preview}\n"
 
+        # Search for relevant research to inform the discussion
+        research_context = ""
+        print("📚 Team searching for relevant research...\n")
+        try:
+            # Extract search query from current context
+            query_prompt = f"""
+Extract 2-3 key academic search terms for finding relevant research.
+
+Problem: {problem_statement[:300]}
+{history_context}
+
+What research topics would help improve the approach?
+Output ONLY the search query (2-5 words, academic terminology).
+"""
+            search_query = self.llm.generate(query_prompt, temperature=0.3).strip().strip('"\'')
+            print(f"   Search query: '{search_query}'")
+
+            papers = self.research.research_topic(
+                query=search_query,
+                context=f"Problem context and looking for methods to improve",
+                num_papers=3  # Get a few relevant papers
+            )
+
+            if papers:
+                research_context = "\n## Recent Research (for your reference):\n"
+                for i, paper in enumerate(papers, 1):
+                    research_context += f"{i}. **{paper.title}** ({', '.join(paper.authors[:2])} et al., {paper.year})\n"
+                    research_context += f"   - {paper.abstract[:200]}...\n"
+                research_context += "\n"
+                print(f"   Found {len(papers)} relevant papers\n")
+            else:
+                print("   No papers found (search may have failed)\n")
+
+        except Exception as e:
+            print(f"   Note: Research search skipped: {e}\n")
+
         agenda = f"""
 **BE CONCISE.** Decide what to implement this iteration.
 
@@ -510,17 +546,19 @@ Only output the agent specifications, nothing else.
 {list(self.executor.data_context.keys())}
 
 {history_context}
+{research_context}
 
 ## Your Role:
 You are world-class experts in your fields. When suggesting approaches:
-- Ground your recommendations in established research and methods
-- Cite relevant papers/techniques when appropriate (e.g., "Smith et al. 2023 showed...")
+- Review the research above and cite specific papers when relevant
+- Ground your recommendations in established methods from the literature
 - Leverage your deep expertise to propose evidence-based solutions
+- You can reference papers by author/year (e.g., "As shown in Smith et al. 2023...")
 
 ## Your Task:
 In 2-3 sentences, describe what needs to be implemented this iteration.
 Focus on WHAT to do, not HOW to code it.
-Ground your suggestions in your expertise and cite research when relevant.
+Ground your suggestions in research and cite specific papers when relevant.
 
 A coding agent will receive your discussion and implement it.
 
