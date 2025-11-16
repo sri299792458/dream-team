@@ -255,13 +255,10 @@ The PI wants to do initial exploration. Write Python code to implement this:
   (You can use any of these variables directly in your code)
 
 ## Requirements:
-- Write exploratory code (e.g., .info(), .head(), .describe(), basic stats)
-- DEFINE ALL VARIABLES YOU USE - don't assume variables exist unless they're in the available context above
-- DO NOT GUESS at column names - inspect dataframes first (e.g., print(df.columns), df.head())
-- Use whatever libraries you need - if not installed, they will be installed automatically
-- Suppress unnecessary warnings: add `import warnings; warnings.filterwarnings('ignore')` if needed
-- Include clear print statements showing what you find
-- Focus on understanding data structure and the problem
+- Inspect dataframes: print(df.info()), df.head(), df.describe(), df.columns
+- ONLY print what you observe - no summaries, interpretations, or conclusions
+- Use variables from "Available in execution context" above
+- Suppress warnings if needed
 
 Output ONLY the Python code, wrapped in ```python code blocks.
 """
@@ -274,6 +271,11 @@ Output ONLY the Python code, wrapped in ```python code blocks.
         )
 
         code = extract_code_from_text(code_output)
+
+        # Save exploration code
+        code_file = self.results_dir / 'code' / 'iteration_00.py'
+        code_file.parent.mkdir(exist_ok=True)
+        code_file.write_text(code)
 
         # Execute exploration with retry on failure
         print("⚙️  Executing exploration...\n")
@@ -304,12 +306,12 @@ Output ONLY the Python code, wrapped in ```python code blocks.
         try:
             # Use LLM to extract academic search terms from problem statement
             query_extraction_prompt = f"""
-Extract 2-3 key academic search terms from this problem statement for searching research papers.
+Extract ONE concise academic search query from this problem statement.
 
 Problem: {problem_statement[:300]}
 
-Output ONLY the search query (2-5 words, academic terminology, no quotes).
-Examples: "shelf life prediction", "time series forecasting", "image classification deep learning"
+Output only 2-3 words, academic terminology.
+Examples: "shelf life prediction", "time series forecasting", "image segmentation"
 """
             search_query = self.llm.generate(query_extraction_prompt, temperature=0.3).strip()
             # Clean up - remove quotes if LLM added them
@@ -320,8 +322,8 @@ Examples: "shelf life prediction", "time series forecasting", "image classificat
             print(f"   Stage 1: Searching highly-cited papers on '{search_query}'...")
             raw_results = self.research.ss_api.search(
                 query=search_query,
-                limit=15,
-                year_range=(2010, 2025)  # Wider range to find influential papers
+                limit=20,
+                year_range=(2000, 2024)  # Wider range to find influential older papers
             )
 
             if raw_results:
@@ -622,8 +624,8 @@ Output ONLY the search query (2-5 words).
                     # Search with wider year range, then sort by citations
                     raw_results = self.research.ss_api.search(
                         query=search_query,
-                        limit=20,  # Get more results
-                        year_range=(2010, 2025)  # Wide range to catch classics
+                        limit=20,
+                        year_range=(2000, 2024)  # Wide range to catch highly-cited older papers
                     )
 
                     # Sort by citation count (descending) to prioritize seminal/influential papers
@@ -803,10 +805,8 @@ The team has discussed what to implement. Write Python code to implement their p
 {previous_output_context}
 ## Requirements:
 - Use variables from "Available in execution context" above
-- Import what you use, define new variables you need
-- Inspect before using: print(df.columns), df.head() - never assume column names
+- Column names: Check "Previous Iteration Output" for df.columns, or add print(df.columns)
 - GPU available - use it when training
-- Print results, suppress warnings
 
 Output ONLY the Python code, wrapped in ```python code blocks.
 """
@@ -963,9 +963,9 @@ Your code failed with an error. Fix it.
 ## Task
 Fix the code:
 
-**NameError** (variable not defined): Define it before use, or import it
-**KeyError** (column missing): Print df.columns to see what exists, don't guess
-**TypeError/AttributeError**: Check object type and what it supports
+**NameError**: Define it or import it
+**KeyError**: Add print(df.columns) to see actual column names
+**TypeError/AttributeError**: Check object type
 
 GPU available.
 
