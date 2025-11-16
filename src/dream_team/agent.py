@@ -86,6 +86,10 @@ class KnowledgeBase:
                 parts.append(f"- {paper.title} ({paper.year})")
                 if paper.key_findings:
                     parts.extend([f"  * {finding}" for finding in paper.key_findings])
+                elif paper.abstract:
+                    # Show abstract excerpt if no key_findings available
+                    abstract_excerpt = paper.abstract[:200] + "..." if len(paper.abstract) > 200 else paper.abstract
+                    parts.append(f"  Abstract: {abstract_excerpt}")
 
         if self.techniques_mastered:
             parts.append("\n## Techniques Mastered:")
