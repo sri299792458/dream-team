@@ -805,8 +805,7 @@ The team has discussed what to implement. Write Python code to implement their p
 {previous_output_context}
 ## Requirements:
 - Use variables from "Available in execution context" above
-- Before using dataframes: print(df.columns) to see actual column names
-- Trust printed output (df.info(), df.columns), NOT text summaries
+- Column names: Check "Previous Iteration Output" for df.columns, or add print(df.columns)
 - GPU available - use it when training
 
 Output ONLY the Python code, wrapped in ```python code blocks.
@@ -965,7 +964,7 @@ Your code failed with an error. Fix it.
 Fix the code:
 
 **NameError**: Define it or import it
-**KeyError**: Add print(df.columns) to see actual columns - trust printed output, not summaries
+**KeyError**: Add print(df.columns) to see actual column names
 **TypeError/AttributeError**: Check object type
 
 GPU available.
