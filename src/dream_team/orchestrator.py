@@ -961,9 +961,13 @@ Your code failed with an error. Fix it.
   Note: Missing packages are auto-installed, so if you see ModuleNotFoundError, just wait - it will retry automatically
 {previous_output_context}
 ## Task
-Fix the code by addressing the root cause, not symptoms:
+Fix the code:
 
-Note: GPU available. For KeyError - inspect first (print df.columns), don't assume.
+**NameError** (variable not defined): Define it before use, or import it
+**KeyError** (column missing): Print df.columns to see what exists, don't guess
+**TypeError/AttributeError**: Check object type and what it supports
+
+GPU available.
 
 Output ONLY the FIXED Python code, wrapped in ```python code blocks.
 """
