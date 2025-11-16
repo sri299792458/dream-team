@@ -255,13 +255,10 @@ The PI wants to do initial exploration. Write Python code to implement this:
   (You can use any of these variables directly in your code)
 
 ## Requirements:
-- Write exploratory code (e.g., .info(), .head(), .describe(), basic stats)
-- DEFINE ALL VARIABLES YOU USE - don't assume variables exist unless they're in the available context above
-- DO NOT GUESS at column names - inspect dataframes first (e.g., print(df.columns), df.head())
-- Use whatever libraries you need - if not installed, they will be installed automatically
-- Suppress unnecessary warnings: add `import warnings; warnings.filterwarnings('ignore')` if needed
-- Include clear print statements showing what you find
-- Focus on understanding data structure and the problem
+- Inspect dataframes: print(df.info()), df.head(), df.describe(), df.columns
+- ONLY print what you observe - no summaries, interpretations, or conclusions
+- Use variables from "Available in execution context" above
+- Suppress warnings if needed
 
 Output ONLY the Python code, wrapped in ```python code blocks.
 """
@@ -803,10 +800,9 @@ The team has discussed what to implement. Write Python code to implement their p
 {previous_output_context}
 ## Requirements:
 - Use variables from "Available in execution context" above
-- Import what you use, define new variables you need
-- Inspect before using: print(df.columns), df.head() - never assume column names
+- Before using dataframes: print(df.columns) to see actual column names
+- Trust printed output (df.info(), df.columns), NOT text summaries
 - GPU available - use it when training
-- Print results, suppress warnings
 
 Output ONLY the Python code, wrapped in ```python code blocks.
 """
@@ -963,9 +959,9 @@ Your code failed with an error. Fix it.
 ## Task
 Fix the code:
 
-**NameError** (variable not defined): Define it before use, or import it
-**KeyError** (column missing): Print df.columns to see what exists, don't guess
-**TypeError/AttributeError**: Check object type and what it supports
+**NameError**: Define it or import it
+**KeyError**: Add print(df.columns) to see actual columns - trust printed output, not summaries
+**TypeError/AttributeError**: Check object type
 
 GPU available.
 
