@@ -507,68 +507,86 @@ Only output the agent specifications, nothing else.
         all_papers = []
         for agent in self.team_members:
             try:
-                # Early iterations: search for foundational review papers
-                # Later iterations: search for specific papers based on current approach
-                is_early_iteration = len(agent.knowledge_base.papers) < 3
+                # First iteration only: search for foundational review papers
+                # All later iterations: search for specific papers
+                is_first_search = len(agent.knowledge_base.papers) == 0
 
-                if is_early_iteration:
+                # Get existing paper titles to avoid duplicates
+                existing_titles = [p.title for p in agent.knowledge_base.papers]
+
+                if is_first_search:
                     # Search for gold standard review papers and meta-analyses
                     query_prompt = f"""
-Generate a search query to find foundational review papers in this expert's field.
+Generate a search query to find foundational review papers in THIS SPECIFIC expert's unique domain.
 
 Expert: {agent.title}
 Expertise: {agent.expertise}
 
-Generate a search query (2-5 words) to find REVIEW PAPERS, META-ANALYSES, or SYSTEMATIC REVIEWS in this expert's field.
-These should be foundational/seminal papers that establish best practices and evidence base.
+Generate a search query (2-5 words) to find REVIEW PAPERS or META-ANALYSES specific to THIS expert's field.
+Make the query SPECIFIC to their domain, not generic.
 
 Examples:
-- For nutrition expert: "nutrition systematic review"
-- For psychologist: "behavior change meta-analysis"
-- For food safety: "food safety review"
+- For "Food Science Expert": "food spoilage mechanisms review"
+- For "Behavioral Psychologist": "behavior change interventions meta-analysis"
+- For "Supply Chain Expert": "cold chain management review"
+- For "ML Engineer": "time series forecasting review"
 
-Focus on finding the GOLD STANDARD reviews in their domain, NOT specific techniques.
+Focus on THEIR SPECIFIC DOMAIN. Each expert should search different topics.
 
-Output ONLY the search query.
+Output ONLY the search query (2-5 words).
 """
                 else:
-                    # Search for specific papers based on current problem
+                    # Search for specific papers based on current problem + what we don't have yet
+                    existing_papers_summary = ", ".join([p.title[:50] for p in agent.knowledge_base.papers[:3]])
                     query_prompt = f"""
-Generate a search query for specific papers relevant to the current problem.
+Generate a NEW search query for papers this expert hasn't found yet.
 
 Expert: {agent.title}
 Expertise: {agent.expertise}
-Problem context: {problem_statement[:200]}
-Previous approach: {history_context[:300] if history_context else "First iteration"}
+Problem: {problem_statement[:200]}
+Current approach: {history_context[:300] if history_context else "Baseline model"}
+Papers already found: {existing_papers_summary}
 
-Generate a search query (2-5 words) to find papers that could help with the current challenge.
-Focus on specific techniques or findings relevant to the problem.
+Generate a search query (2-5 words) for NEW papers that:
+1. Are different from what they already have
+2. Address specific gaps or challenges in the current approach
+3. Are relevant to this expert's unique domain
 
-Output ONLY the search query.
+Focus on a DIFFERENT aspect than their previous searches.
+
+Output ONLY the search query (2-5 words).
 """
 
-                search_query = self.llm.generate(query_prompt, temperature=0.3).strip().strip('"\'')
-                search_type = "review papers" if is_early_iteration else "specific papers"
+                search_query = self.llm.generate(query_prompt, temperature=0.5).strip().strip('"\'')
+                search_type = "foundational reviews" if is_first_search else "targeted research"
                 print(f"   {agent.title} searching {search_type}: '{search_query}'")
 
                 # More papers for foundational reviews, fewer for specific searches
-                num_papers = 3 if is_early_iteration else 2
+                num_papers = 3 if is_first_search else 2
                 # Wider year range for foundational reviews to catch seminal papers
-                year_range = (2015, 2025) if is_early_iteration else (2020, 2025)
+                year_range = (2015, 2025) if is_first_search else (2020, 2025)
 
                 papers = self.research.research_topic(
                     query=search_query,
-                    context=f"{agent.expertise} - looking for {'foundational review papers' if is_early_iteration else 'specific relevant papers'}",
+                    context=f"{agent.expertise} - looking for {'foundational review papers' if is_first_search else 'specific relevant papers'}",
                     num_papers=num_papers,
                     year_range=year_range
                 )
 
                 if papers:
-                    # Add papers to agent's knowledge base
+                    # Add NEW papers to agent's knowledge base (avoid duplicates)
+                    new_papers = []
                     for paper in papers:
-                        agent.knowledge_base.add_paper(paper)
-                    all_papers.extend([(agent.title, paper) for paper in papers])
-                    print(f"      Found {len(papers)} papers\n")
+                        if paper.title not in existing_titles:
+                            agent.knowledge_base.add_paper(paper)
+                            new_papers.append(paper)
+                            existing_titles.append(paper.title)  # Track to avoid dups within this search
+
+                    if new_papers:
+                        all_papers.extend([(agent.title, paper) for paper in new_papers])
+                        print(f"      Found {len(new_papers)} new papers\n")
+                    else:
+                        print(f"      Found {len(papers)} papers (all duplicates, skipped)\n")
                 else:
                     print(f"      No papers found\n")
 
