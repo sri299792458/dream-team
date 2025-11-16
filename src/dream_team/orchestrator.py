@@ -92,6 +92,9 @@ class ExperimentOrchestrator:
         # Initialize executor with data
         self.executor = CodeExecutor(data_context=data_context)
 
+        # Store problem statement for use in prompts
+        self.problem_statement = problem_statement
+
         # Check for resume
         start_iteration = 1
         if resume:
@@ -506,6 +509,9 @@ The team has discussed what to implement. Write Python code to implement their p
 ## Team's Discussion:
 {approach}
 
+## Problem Statement (for reference):
+{self.problem_statement}
+
 ## Available in execution context:
 - Libraries: pandas (pd), numpy (np), pathlib.Path
 - Variables: {list(self.executor.data_context.keys())}
@@ -513,6 +519,9 @@ The team has discussed what to implement. Write Python code to implement their p
 
 ## Requirements:
 - Write complete, executable Python code that implements what the team discussed
+- DEFINE ALL VARIABLES YOU USE - don't assume variables exist unless they're in the available context above
+- If the problem statement mentions specific column names (e.g., target variable), use those exact names
+- Include necessary imports (sklearn, lightgbm, etc.) if you use them
 - Include print statements for key results
 - Store metrics in variables (e.g., mae, cv_scores, f1_score)
 - Variables you create will persist to the next iteration
@@ -628,6 +637,9 @@ Your code failed with an error. Fix it.
 ## Original Approach
 {approach}
 
+## Problem Statement (for reference):
+{self.problem_statement}
+
 ## Your Code That Failed
 ```python
 {failed_code}
@@ -639,13 +651,17 @@ Your code failed with an error. Fix it.
 ## Traceback
 {traceback}
 
+## Available in execution context:
+- Variables: {list(self.executor.data_context.keys())}
+
 ## Task
 Analyze the error and fix the code. Common issues:
-- Missing imports
-- Incorrect variable names
-- Data type mismatches
-- Index errors
-- Division by zero
+- **Undefined variables** - define ALL variables you use (e.g., target_column = 'column_name')
+- Missing imports - add necessary import statements
+- Incorrect variable names - check spelling and case
+- Data type mismatches - ensure correct data types
+- Index errors - verify index/column existence
+- Division by zero - add checks before division
 
 Output ONLY the FIXED Python code, wrapped in ```python code blocks.
 """
