@@ -653,12 +653,12 @@ Only output the agent specifications, nothing else.
 {research_context}
 
 ## Roles:
-- **Team Members**: Propose features using ONLY the columns listed above
-- **Lead**: Synthesize proposals into final decisions
+- **Team Members**: Propose features using ONLY the columns listed above (will use ReAct to search papers and ground proposals)
+- **Lead**: Synthesize team's proposals into clear decisions
 
 ## Task:
 Team members: Propose what to implement based on your expertise (2-3 sentences).
-Lead: Synthesize proposals and make FINAL DECISIONS (no questions, just decisions).
+Lead: Synthesize the team's proposals into a decisive action plan.
 """
 
         # Log agenda summary (not full text - too verbose)
