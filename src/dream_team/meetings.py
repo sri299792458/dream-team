@@ -101,52 +101,25 @@ Keep it concise (2-3 paragraphs).
                 # Build context from transcript
                 context = self._build_context()
 
-                # Step 1: Agent drafts proposal based on expertise
-                draft_prompt = f"""You are participating in a team meeting.
+                # ReAct loop: Reasoning + Acting iteratively
+                if self.research_api:
+                    response = self._react_proposal(member, agenda, context, temperature)
+                else:
+                    # Fallback: simple proposal without ReAct
+                    response = self.llm.generate(
+                        f"""You are participating in a team meeting.
 
 Agenda: {agenda}
 
 Discussion so far:
 {context}
 
-Draft your proposal as {member.title}. What technique/approach would you suggest?
+Provide your input as {member.title}. Draw on your expertise.
 Keep it concise (1-2 paragraphs).
-"""
-
-                draft_proposal = self.llm.generate(
-                    draft_prompt,
-                    system_instruction=member.prompt,
-                    temperature=temperature
-                )
-
-                # Step 2: Search papers to verify/support the proposal
-                if self.research_api and len(draft_proposal) > 50:
-                    self._search_papers_to_verify(member, draft_proposal)
-
-                # Step 3: Generate final proposal with citations
-                final_prompt = f"""You are participating in a team meeting.
-
-Agenda: {agenda}
-
-Discussion so far:
-{context}
-
-Your draft proposal:
-{draft_proposal}
-
-Your knowledge base now contains relevant papers.
-Finalize your proposal, **citing specific papers to ground your recommendations in research.**
-
-Format citations as: (Author et al., Year)
-
-Keep your response focused (1-2 paragraphs).
-"""
-
-                response = self.llm.generate(
-                    final_prompt,
-                    system_instruction=member.prompt,
-                    temperature=temperature * 0.9  # Slightly more focused
-                )
+""",
+                        system_instruction=member.prompt,
+                        temperature=temperature
+                    )
 
                 self.add_message(member.title, response)
                 member.meetings_participated += 1
@@ -200,6 +173,170 @@ Provide in JSON format:
             f"{msg['agent']}: {msg['message']}"
             for msg in recent
         ])
+
+    def _react_proposal(self, agent, agenda: str, context: str, temperature: float, max_steps: int = 2) -> str:
+        """
+        ReAct loop: agent reasons and acts iteratively before final proposal.
+
+        Pattern:
+        1. Thought: What should I investigate?
+        2. Action: Search papers on [topic]
+        3. Observation: Papers show...
+        4. (Repeat 1-3)
+        5. Final Answer: Proposal with citations
+        """
+        print(f"   🧠 {agent.title} using ReAct reasoning...")
+
+        react_history = []
+
+        for step in range(max_steps):
+            # Thought: Agent decides what to investigate
+            thought_prompt = f"""You are {agent.title} preparing for a team meeting.
+
+Agenda: {agenda}
+
+Discussion so far:
+{context}
+
+{"Previous reasoning:" if react_history else ""}
+{self._format_react_history(react_history)}
+
+Think about what you should propose. What aspect should you investigate further to make a grounded recommendation?
+
+Output format:
+Thought: [What I'm thinking about]
+Action: Search papers on "[2-4 word search query]"
+
+Be concise. Only output Thought and Action.
+"""
+
+            thought_action = self.llm.generate(
+                thought_prompt,
+                system_instruction=agent.prompt,
+                temperature=temperature * 0.8
+            )
+
+            # Parse thought and action
+            thought = ""
+            search_query = ""
+
+            for line in thought_action.split('\n'):
+                if line.startswith('Thought:'):
+                    thought = line.replace('Thought:', '').strip()
+                elif line.startswith('Action:'):
+                    action_text = line.replace('Action:', '').strip()
+                    # Extract query from "Search papers on 'X'" or similar
+                    if '"' in action_text:
+                        search_query = action_text.split('"')[1]
+                    elif "'" in action_text:
+                        search_query = action_text.split("'")[1]
+                    else:
+                        # Fallback: use last few words
+                        words = action_text.split()
+                        search_query = ' '.join(words[-4:]) if len(words) > 4 else action_text
+
+            if not search_query:
+                break  # Stop if can't parse
+
+            print(f"      Step {step+1} Thought: {thought[:80]}...")
+            print(f"      Step {step+1} Action: Search '{search_query}'")
+
+            # Action: Search papers
+            observation = self._search_and_observe(agent, search_query)
+
+            print(f"      Step {step+1} Observation: {observation[:100]}...")
+
+            react_history.append({
+                'thought': thought,
+                'action': f"Search papers on '{search_query}'",
+                'observation': observation
+            })
+
+        # Final Answer: Generate proposal with citations
+        final_prompt = f"""You are {agent.title} in a team meeting.
+
+Agenda: {agenda}
+
+Discussion so far:
+{context}
+
+Your ReAct reasoning process:
+{self._format_react_history(react_history)}
+
+Based on your investigation, provide your final proposal.
+**Cite specific papers from your knowledge base to support your recommendations.**
+
+Format citations as: (Author et al., Year)
+
+Keep it focused (1-2 paragraphs).
+"""
+
+        final_proposal = self.llm.generate(
+            final_prompt,
+            system_instruction=agent.prompt,
+            temperature=temperature * 0.9
+        )
+
+        return final_proposal
+
+    def _format_react_history(self, history: list) -> str:
+        """Format ReAct history for prompts"""
+        if not history:
+            return ""
+
+        formatted = []
+        for i, step in enumerate(history, 1):
+            formatted.append(f"Step {i}:")
+            formatted.append(f"  Thought: {step['thought']}")
+            formatted.append(f"  Action: {step['action']}")
+            formatted.append(f"  Observation: {step['observation']}")
+
+        return '\n'.join(formatted)
+
+    def _search_and_observe(self, agent, search_query: str) -> str:
+        """Search papers and return observation summary"""
+        try:
+            # Limit query length
+            if len(search_query) > 50:
+                search_query = search_query[:50]
+
+            # Search
+            raw_results = self.research_api.search(
+                query=search_query,
+                limit=5,
+                year_range=(2018, 2025)
+            )
+
+            if not raw_results:
+                return "No relevant papers found."
+
+            # Get existing papers
+            existing_titles = [p.title for p in agent.knowledge_base.papers]
+
+            # Add new papers and build observation
+            papers_found = []
+            for result in raw_results[:2]:
+                if result.title not in existing_titles:
+                    paper = result.to_paper()
+                    agent.knowledge_base.add_paper(paper)
+                    papers_found.append(paper)
+                    print(f"         ✓ {paper.title[:60]}... ({paper.year})")
+
+            if not papers_found:
+                return "Papers already in knowledge base."
+
+            # Build observation summary
+            observation = f"Found {len(papers_found)} relevant papers: "
+            observations = []
+            for paper in papers_found:
+                obs = f"{paper.title[:50]}... ({', '.join(paper.authors[:2])} et al., {paper.year})"
+                observations.append(obs)
+
+            observation += '; '.join(observations)
+            return observation
+
+        except Exception as e:
+            return f"Search failed: {e}"
 
     def _search_papers_to_verify(self, agent, draft_proposal: str):
         """Search for papers to verify/support agent's draft proposal"""

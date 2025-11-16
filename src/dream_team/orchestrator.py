@@ -614,8 +614,8 @@ Only output the agent specifications, nothing else.
             approach_preview = approach[:200] + "..." if len(approach) > 200 else approach
             history_context = f"\n## Previous Iteration:\nApproach: {approach_preview}\nMetrics: {last['metrics']}{output_preview}\n"
 
-        # Research context removed - agents can propose based on their expertise
-        # TODO: Add ability for agents to search papers during meeting when making proposals
+        # Research context removed - agents now use ReAct loop during meetings
+        # They search papers iteratively as they reason about proposals
         research_context = ""
 
         # Use column schemas extracted during bootstrap
