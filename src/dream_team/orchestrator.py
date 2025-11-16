@@ -361,21 +361,79 @@ Format your response as a simple list, one team member per line.
         """
         Parse PI's recruitment plan and create agents.
 
-        For now, creates a default ML Strategist.
-        Future: Use LLM to parse plan and create custom agents.
+        Uses LLM to extract agent specifications from PI's plan.
         """
-        # Simple heuristic: if PI mentions ML/machine learning, add ML Strategist
-        # If mentions domain/food/chemistry, could add domain expert
-        # For now, default to ML Strategist
+        # Use LLM to parse the recruitment plan and extract agent definitions
+        parse_task = f"""
+Parse this recruitment plan and extract agent specifications.
 
-        ml_strategist = Agent(
-            title="ML Strategist",
-            expertise="machine learning algorithms, feature engineering, model selection, predictive modeling, research literature in ML/AI, state-of-the-art methods",
-            goal="design evidence-based predictive approaches grounded in research and best practices",
-            role="propose modeling strategies with citations to relevant research when appropriate"
+## Recruitment Plan:
+{recruitment_plan}
+
+## Your Task:
+For each team member mentioned, extract:
+- Title
+- Expertise
+- Role
+
+Output in this exact format (one agent per block):
+
+AGENT 1:
+Title: [exact title from plan]
+Expertise: [expertise description from plan]
+Role: [role description from plan]
+
+AGENT 2:
+Title: [exact title from plan]
+Expertise: [expertise description from plan]
+Role: [role description from plan]
+
+Only output the agent specifications, nothing else.
+"""
+
+        meeting = IndividualMeeting(save_dir=str(self.results_dir / 'meetings'))
+        parsed_output = meeting.run(
+            agent=self.team_lead,
+            task=parse_task,
+            num_iterations=1
         )
 
-        return [ml_strategist]
+        # Parse the structured output and create Agent objects
+        agents = []
+        current_agent = {}
+
+        for line in parsed_output.split('\n'):
+            line = line.strip()
+
+            if line.startswith('Title:'):
+                current_agent['title'] = line.replace('Title:', '').strip()
+            elif line.startswith('Expertise:'):
+                current_agent['expertise'] = line.replace('Expertise:', '').strip()
+            elif line.startswith('Role:'):
+                current_agent['role'] = line.replace('Role:', '').strip()
+
+                # When we have all three fields, create agent
+                if 'title' in current_agent and 'expertise' in current_agent and 'role' in current_agent:
+                    agent = Agent(
+                        title=current_agent['title'],
+                        expertise=current_agent['expertise'],
+                        goal=f"contribute specialized expertise to optimize the target metric",
+                        role=current_agent['role']
+                    )
+                    agents.append(agent)
+                    current_agent = {}  # Reset for next agent
+
+        # Fallback: if parsing failed, create a generic ML specialist
+        if not agents:
+            print("   ⚠️  Could not parse recruitment plan, creating default ML Strategist")
+            agents = [Agent(
+                title="ML Strategist",
+                expertise="machine learning, feature engineering, model selection, predictive modeling",
+                goal="design effective predictive approaches",
+                role="propose modeling strategies and analytical approaches"
+            )]
+
+        return agents
 
     def _team_planning_meeting(self, problem_statement: str) -> str:
         """Run team meeting to plan approach"""
