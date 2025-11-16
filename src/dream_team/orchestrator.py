@@ -382,7 +382,15 @@ Format your response as a simple list, one team member per line.
             'metrics': {},  # No metrics in bootstrap, but include empty dict for consistency
             'agents_snapshot': [self.team_lead.title, self.coding_agent.title],
             'recruitment_plan': recruitment_plan,
-            'recruited_agents': [{'title': a.title, 'expertise': a.expertise} for a in recruited_agents]
+            'recruited_agents': [
+                {
+                    'title': a.title,
+                    'expertise': a.expertise,
+                    'role': a.role,
+                    'goal': a.goal
+                }
+                for a in recruited_agents
+            ]
         }
 
         # Add to experiment history so iteration 1 can see bootstrap output!
@@ -728,15 +736,20 @@ Your code failed with an error. Fix it.
 {previous_output_context}
 ## Task
 Analyze the error and fix the code. Common issues:
+- **NameError (undefined variable)** - define ALL variables you use
+  - Common: `STATUS_OK` from hyperopt → add `from hyperopt import STATUS_OK`
+  - target_column, model variables, etc.
 - **KeyError (column name)** - DO NOT GUESS column names! First inspect the dataframe: print(df.columns), df.head(), df.info()
-- **Undefined variables** - define ALL variables you use (e.g., target_column = 'column_name')
+- **Missing imports** - add all necessary imports at the top
+  - hyperopt: `from hyperopt import fmin, tpe, hp, Trials, STATUS_OK`
+  - sklearn, lightgbm, etc.
 - **AttributeError** - Check object types and available methods
-- Missing imports - add necessary import statements
 - Incorrect variable names - check spelling and case
 - Data type mismatches - ensure correct data types
 - Index errors - verify index/column existence before accessing
 
 **IMPORTANT:**
+- If NameError: check what's undefined and import/define it
 - If KeyError: add code to INSPECT the dataframe structure first, then use ACTUAL column names
 - Use whatever libraries make sense - they'll be installed if needed
 - Keep output clean: use verbose=-1 for LightGBM, verbosity=0 for XGBoost, warnings.filterwarnings('ignore')
@@ -1085,6 +1098,29 @@ Be strategic - only make changes that address the current challenge.
                 print(f"   ⚠️  Warning: Iteration {iter_num} failed on re-execution")
                 print(f"   Error: {result['error']}")
                 # Continue anyway - maybe environment changed
+
+        # Reconstruct team composition from bootstrap
+        # Check if iteration 0 (bootstrap) has recruited_agents
+        bootstrap_data = next((item for item in self.experiment_history if item.get('iteration') == 0), None)
+        if bootstrap_data and 'recruited_agents' in bootstrap_data:
+            print("   Reconstructing team from bootstrap...")
+            from .agent import Agent
+            recruited_agents = bootstrap_data['recruited_agents']
+
+            # Recreate Agent objects
+            for agent_data in recruited_agents:
+                agent = Agent(
+                    title=agent_data['title'],
+                    expertise=agent_data['expertise'],
+                    role=agent_data.get('role', ''),
+                    goal=agent_data.get('goal', '')
+                )
+                self.team_members.append(agent)
+                print(f"   Restored: {agent.title}")
+
+            # Update all_agents
+            self.all_agents = [self.team_lead] + self.team_members
+            print(f"   ✅ Restored {len(recruited_agents)} team member(s)\n")
 
         # Load agent states
         agent_files = sorted(self.results_dir.glob('agents/*.json'))
