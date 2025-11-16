@@ -507,27 +507,60 @@ Only output the agent specifications, nothing else.
         all_papers = []
         for agent in self.team_members:
             try:
-                # Generate search query based on agent's expertise domain
-                # Focus on their DOMAIN (nutrition, psychology, etc.) not ML techniques
-                query_prompt = f"""
-Generate an academic search query for papers in this expert's domain.
+                # Early iterations: search for foundational review papers
+                # Later iterations: search for specific papers based on current approach
+                is_early_iteration = len(agent.knowledge_base.papers) < 3
+
+                if is_early_iteration:
+                    # Search for gold standard review papers and meta-analyses
+                    query_prompt = f"""
+Generate a search query to find foundational review papers in this expert's field.
+
+Expert: {agent.title}
+Expertise: {agent.expertise}
+
+Generate a search query (2-5 words) to find REVIEW PAPERS, META-ANALYSES, or SYSTEMATIC REVIEWS in this expert's field.
+These should be foundational/seminal papers that establish best practices and evidence base.
+
+Examples:
+- For nutrition expert: "nutrition systematic review"
+- For psychologist: "behavior change meta-analysis"
+- For food safety: "food safety review"
+
+Focus on finding the GOLD STANDARD reviews in their domain, NOT specific techniques.
+
+Output ONLY the search query.
+"""
+                else:
+                    # Search for specific papers based on current problem
+                    query_prompt = f"""
+Generate a search query for specific papers relevant to the current problem.
 
 Expert: {agent.title}
 Expertise: {agent.expertise}
 Problem context: {problem_statement[:200]}
+Previous approach: {history_context[:300] if history_context else "First iteration"}
 
-Generate a search query (2-5 words) to find papers from this expert's academic field.
-Focus on the DOMAIN (nutrition, psychology, food science, etc.), NOT machine learning.
+Generate a search query (2-5 words) to find papers that could help with the current challenge.
+Focus on specific techniques or findings relevant to the problem.
 
 Output ONLY the search query.
 """
+
                 search_query = self.llm.generate(query_prompt, temperature=0.3).strip().strip('"\'')
-                print(f"   {agent.title} searching: '{search_query}'")
+                search_type = "review papers" if is_early_iteration else "specific papers"
+                print(f"   {agent.title} searching {search_type}: '{search_query}'")
+
+                # More papers for foundational reviews, fewer for specific searches
+                num_papers = 3 if is_early_iteration else 2
+                # Wider year range for foundational reviews to catch seminal papers
+                year_range = (2015, 2025) if is_early_iteration else (2020, 2025)
 
                 papers = self.research.research_topic(
                     query=search_query,
-                    context=f"{agent.expertise} - looking for relevant domain knowledge",
-                    num_papers=2  # 2 papers per expert
+                    context=f"{agent.expertise} - looking for {'foundational review papers' if is_early_iteration else 'specific relevant papers'}",
+                    num_papers=num_papers,
+                    year_range=year_range
                 )
 
                 if papers:
