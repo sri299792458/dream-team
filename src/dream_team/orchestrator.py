@@ -802,19 +802,11 @@ The team has discussed what to implement. Write Python code to implement their p
   (You can use any of these variables directly in your code)
 {previous_output_context}
 ## Requirements:
-- Write complete, executable code:
-  - Use variables from "Available in execution context" - they are GUARANTEED to exist
-  - Define any new variables you need
-  - Import ALL symbols you use from libraries (functions, classes, constants)
-  - Optional: Save large objects to disk (e.g., `joblib.dump(model, artifacts_dir / 'model.pkl')`) if useful for later
-- CRITICAL - Never assume, always verify:
-  - Before using df columns: Add `print(df.columns)` to see what exists
-  - Before merging: Check column names in BOTH dataframes first
-  - Only use variables listed in "Available in execution context" above
-- A GPU is available - use it when training models
-- Suppress verbose output: warnings.filterwarnings('ignore'), verbose=-1 for LightGBM/XGBoost
-- Print key results and store metrics in variables (e.g., mae, rmse, f1_score)
-- Created variables persist to next iteration
+- Use variables from "Available in execution context" above
+- Import what you use, define new variables you need
+- Inspect before using: print(df.columns), df.head() - never assume column names
+- GPU available - use it when training
+- Print results, suppress warnings
 
 Output ONLY the Python code, wrapped in ```python code blocks.
 """
@@ -971,18 +963,7 @@ Your code failed with an error. Fix it.
 ## Task
 Fix the code by addressing the root cause, not symptoms:
 
-Note: A GPU is available - use it when training models.
-
-Common error patterns and fixes:
-- **KeyError** (column/key doesn't exist):
-  1. FIRST: Add print statements to see what exists: `print(df.columns)` or `print(dict.keys())`
-  2. THEN: Use the actual column/key names you see
-  3. DO NOT assume or guess column names
-- **NameError** → Import it, define it, or check spelling
-- **AttributeError** → Check object type and available methods
-- **TypeError** → Check what the function expects
-
-CRITICAL: For KeyError, you MUST add inspection code first. Do not assume column names.
+Note: GPU available. For KeyError - inspect first (print df.columns), don't assume.
 
 Output ONLY the FIXED Python code, wrapped in ```python code blocks.
 """
