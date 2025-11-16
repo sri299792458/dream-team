@@ -94,6 +94,13 @@ class ExperimentOrchestrator:
         print()
 
         # Initialize executor with data
+        # Add artifacts_dir so agents can save important objects
+        artifacts_dir = self.results_dir / 'artifacts'
+        artifacts_dir.mkdir(exist_ok=True)
+        if data_context is None:
+            data_context = {}
+        data_context['artifacts_dir'] = artifacts_dir
+
         self.executor = CodeExecutor(data_context=data_context)
 
         # Store problem statement for use in prompts
@@ -291,8 +298,9 @@ Output ONLY the Python code, wrapped in ```python code blocks.
         print(f"\n{self.team_lead.title} reviewing exploration results and recruiting team...\n")
 
         # Fetch research to inform recruitment decisions
+        # Bootstrap always uses Stage 1: highly-cited review papers
         research_summary = ""
-        print("📚 Searching research literature to inform team composition...\n")
+        print("📚 Searching for highly-cited review papers on the problem...\n")
         try:
             # Use LLM to extract academic search terms from problem statement
             query_extraction_prompt = f"""
@@ -308,17 +316,87 @@ Examples: "shelf life prediction", "time series forecasting", "image classificat
             search_query = search_query.strip('"\'')
             print(f"   Search query: '{search_query}'")
 
-            papers = self.research.research_topic(
+            # Bootstrap: Search for highly-cited review papers (wider year range, sort by citations)
+            print(f"   Stage 1: Searching highly-cited papers on '{search_query}'...")
+            raw_results = self.research.ss_api.search(
                 query=search_query,
-                context="Understanding what methodologies and expertise are commonly used",
-                num_papers=2  # Reduced to avoid rate limiting
+                limit=15,
+                year_range=(2010, 2025)  # Wider range to find influential papers
             )
-            if papers:
-                research_summary = "\n## Relevant Research Approaches:\n"
-                for paper in papers:
-                    research_summary += f"- {paper.title}: "
-                    research_summary += f"{paper.abstract[:100]}...\n"
-                research_summary += "\n"
+
+            if raw_results:
+                # Sort by citation count to get most influential papers
+                raw_results.sort(key=lambda p: p.citation_count, reverse=True)
+                papers_to_analyze = raw_results[:3]  # Top 3 most cited
+
+                print(f"   Found {len(raw_results)} papers, analyzing top {len(papers_to_analyze)} by citations...")
+
+                # Use LLM to analyze relevance
+                from .agent import Paper
+                papers = []
+                for i, result in enumerate(papers_to_analyze):
+                    print(f"   Analyzing paper {i+1}: {result.title[:60]}... (citations: {result.citation_count})")
+
+                    analysis_prompt = f"""You are analyzing a scientific paper for relevance to a problem.
+
+Problem: {problem_statement[:300]}
+
+Paper Title: {result.title}
+Authors: {', '.join(result.authors)}
+Year: {result.year}
+Citations: {result.citation_count}
+Abstract: {result.abstract}
+
+Tasks:
+1. Rate relevance to the problem (0.0-1.0)
+2. Extract 2-3 key findings or methodologies
+3. Summarize applicability in one sentence
+
+Respond in JSON format:
+{{
+    "relevance_score": 0.0-1.0,
+    "key_findings": ["finding 1", "finding 2"],
+    "applicability": "brief summary"
+}}
+"""
+
+                    try:
+                        analysis = self.llm.generate_json(analysis_prompt, temperature=0.3)
+                        paper = Paper(
+                            title=result.title,
+                            authors=result.authors,
+                            year=result.year,
+                            abstract=result.abstract,
+                            key_findings=analysis.get("key_findings", []),
+                            relevance_score=analysis.get("relevance_score", 0.0),
+                            semantic_scholar_id=result.paper_id,
+                            citation_count=result.citation_count
+                        )
+                        papers.append(paper)
+                    except Exception as e:
+                        print(f"   ⚠️  Error analyzing paper: {e}")
+                        # Fallback: create paper without LLM analysis
+                        paper = Paper(
+                            title=result.title,
+                            authors=result.authors,
+                            year=result.year,
+                            abstract=result.abstract,
+                            semantic_scholar_id=result.paper_id,
+                            citation_count=result.citation_count,
+                            relevance_score=0.5
+                        )
+                        papers.append(paper)
+
+                if papers:
+                    research_summary = "\n## Highly-Cited Research on This Problem:\n"
+                    for paper in papers:
+                        research_summary += f"- {paper.title} ({paper.year}, {paper.citation_count} citations)\n"
+                        if paper.key_findings:
+                            research_summary += f"  Key findings: {'; '.join(paper.key_findings[:2])}\n"
+                    research_summary += "\n"
+            else:
+                print("   No papers found")
+
         except Exception as e:
             print(f"   Note: Research search skipped (API rate limit or error): {e}\n")
 
@@ -507,35 +585,133 @@ Only output the agent specifications, nothing else.
         all_papers = []
         for agent in self.team_members:
             try:
-                # Generate search query based on agent's expertise domain
-                # Focus on their DOMAIN (nutrition, psychology, etc.) not ML techniques
-                query_prompt = f"""
-Generate an academic search query for papers in this expert's domain.
+                # Multi-stage citation-aware search strategy:
+                # Stage 1 (0 papers): Highly-cited reviews
+                # Stage 2 (1-3 papers): Backward citations (what did reviews cite?)
+                # Stage 3+ (4+ papers): Forward citations + recent work
+                num_papers_in_kb = len(agent.knowledge_base.papers)
+
+                # Get existing paper titles and IDs to avoid duplicates
+                existing_titles = [p.title for p in agent.knowledge_base.papers]
+                existing_paper_ids = [p.semantic_scholar_id for p in agent.knowledge_base.papers if p.semantic_scholar_id]
+
+                # STAGE 1: Highly-cited reviews and foundational papers
+                if num_papers_in_kb == 0:
+                    query_prompt = f"""
+Generate a search query to find foundational review papers in THIS SPECIFIC expert's unique domain.
 
 Expert: {agent.title}
 Expertise: {agent.expertise}
-Problem context: {problem_statement[:200]}
 
-Generate a search query (2-5 words) to find papers from this expert's academic field.
-Focus on the DOMAIN (nutrition, psychology, food science, etc.), NOT machine learning.
+Generate a search query (2-5 words) to find REVIEW PAPERS or META-ANALYSES specific to THIS expert's field.
+Make the query SPECIFIC to their domain, not generic.
 
-Output ONLY the search query.
+Examples:
+- For "Food Science Expert": "food spoilage mechanisms review"
+- For "Behavioral Psychologist": "behavior change interventions meta-analysis"
+- For "Supply Chain Expert": "cold chain management review"
+- For "ML Engineer": "time series forecasting review"
+
+Focus on THEIR SPECIFIC DOMAIN. Each expert should search different topics.
+
+Output ONLY the search query (2-5 words).
 """
-                search_query = self.llm.generate(query_prompt, temperature=0.3).strip().strip('"\'')
-                print(f"   {agent.title} searching: '{search_query}'")
+                    search_query = self.llm.generate(query_prompt, temperature=0.3).strip().strip('"\'')
+                    print(f"   {agent.title} [Stage 1: Highly-cited reviews] '{search_query}'")
 
-                papers = self.research.research_topic(
-                    query=search_query,
-                    context=f"{agent.expertise} - looking for relevant domain knowledge",
-                    num_papers=2  # 2 papers per expert
-                )
+                    # Search with wider year range, then sort by citations
+                    raw_results = self.research.ss_api.search(
+                        query=search_query,
+                        limit=20,  # Get more results
+                        year_range=(2010, 2025)  # Wide range to catch classics
+                    )
+
+                    # Sort by citation count (descending) to prioritize seminal/influential papers
+                    raw_results.sort(key=lambda p: p.citation_count, reverse=True)
+                    papers_to_analyze = raw_results[:3]  # Take top 3 most cited
+
+                    papers = []
+                    for result in papers_to_analyze:
+                        paper = result.to_paper()
+                        papers.append(paper)
+
+                    print(f"      Found {len(papers)} highly-cited papers (avg citations: {sum(p.citation_count for p in raw_results[:3])/max(len(raw_results[:3]), 1):.0f})")
+
+                # STAGE 2: Backward citation search (what did the reviews cite?)
+                elif num_papers_in_kb <= 3:
+                    print(f"   {agent.title} [Stage 2: Backward citations from reviews]")
+
+                    # Get references from the most highly-cited paper in their KB
+                    most_cited_paper = max(agent.knowledge_base.papers, key=lambda p: p.citation_count if p.semantic_scholar_id else 0)
+
+                    if most_cited_paper.semantic_scholar_id:
+                        # Get papers this review cites (backward search)
+                        raw_results = self.research.ss_api.get_references(
+                            paper_id=most_cited_paper.semantic_scholar_id,
+                            limit=20
+                        )
+
+                        # Sort by citation count to get seminal works
+                        raw_results.sort(key=lambda p: p.citation_count, reverse=True)
+                        papers_to_analyze = [p for p in raw_results[:5] if p.paper_id not in existing_paper_ids][:2]
+
+                        papers = [p.to_paper() for p in papers_to_analyze]
+                        print(f"      Found {len(papers)} seminal papers from references")
+                    else:
+                        papers = []
+                        print(f"      No paper ID available for backward search")
+
+                # STAGE 3+: Forward citations + recent work
+                else:
+                    print(f"   {agent.title} [Stage 3: Recent work & forward citations]")
+
+                    existing_papers_summary = ", ".join([p.title[:50] for p in agent.knowledge_base.papers[:3]])
+                    query_prompt = f"""
+Generate a search query for RECENT papers (2022-2025) on a specific aspect of this expert's domain.
+
+Expert: {agent.title}
+Expertise: {agent.expertise}
+Problem: {problem_statement[:200]}
+Current approach: {history_context[:300] if history_context else "Baseline model"}
+Papers already found: {existing_papers_summary}
+
+Generate a search query (2-5 words) for RECENT papers that:
+1. Address specific challenges in the current approach
+2. Are different from what they already have
+3. Are relevant to this expert's domain
+
+Focus on a DIFFERENT aspect than their previous searches.
+
+Output ONLY the search query (2-5 words).
+"""
+                    search_query = self.llm.generate(query_prompt, temperature=0.5).strip().strip('"\'')
+                    print(f"      Query: '{search_query}'")
+
+                    # Recent papers only
+                    raw_results = self.research.ss_api.search(
+                        query=search_query,
+                        limit=10,
+                        year_range=(2022, 2025)
+                    )
+
+                    papers_to_analyze = [p for p in raw_results[:2] if p.title not in existing_titles]
+                    papers = [p.to_paper() for p in papers_to_analyze]
+                    print(f"      Found {len(papers)} recent papers")
 
                 if papers:
-                    # Add papers to agent's knowledge base
+                    # Add NEW papers to agent's knowledge base (avoid duplicates)
+                    new_papers = []
                     for paper in papers:
-                        agent.knowledge_base.add_paper(paper)
-                    all_papers.extend([(agent.title, paper) for paper in papers])
-                    print(f"      Found {len(papers)} papers\n")
+                        if paper.title not in existing_titles:
+                            agent.knowledge_base.add_paper(paper)
+                            new_papers.append(paper)
+                            existing_titles.append(paper.title)  # Track to avoid dups within this search
+
+                    if new_papers:
+                        all_papers.extend([(agent.title, paper) for paper in new_papers])
+                        print(f"      Found {len(new_papers)} new papers\n")
+                    else:
+                        print(f"      Found {len(papers)} papers (all duplicates, skipped)\n")
                 else:
                     print(f"      No papers found\n")
 
@@ -546,7 +722,12 @@ Output ONLY the search query.
         if all_papers:
             research_context = "\n## Domain Research (searched by team members):\n"
             for agent_title, paper in all_papers:
-                research_context += f"\n**[{agent_title}]** {paper.title} ({', '.join(paper.authors[:2])} et al., {paper.year})\n"
+                # Show citation count to indicate paper influence/quality
+                citations_info = ""
+                if paper.citation_count > 0:
+                    citations_info = f" [{paper.citation_count} cites]"
+
+                research_context += f"\n**[{agent_title}]** {paper.title}{citations_info} ({', '.join(paper.authors[:2])} et al., {paper.year})\n"
                 research_context += f"   {paper.abstract[:200]}...\n"
             research_context += "\n"
             print(f"✅ Team found {len(all_papers)} domain-specific papers total\n")
@@ -628,10 +809,12 @@ The team has discussed what to implement. Write Python code to implement their p
   - Use variables from "Available in execution context" - they are GUARANTEED to exist
   - Define any new variables you need
   - Import ALL symbols you use from libraries (functions, classes, constants)
+  - Optional: Save large objects to disk (e.g., `joblib.dump(model, artifacts_dir / 'model.pkl')`) if useful for later
 - DO NOT make assumptions:
   - Don't assume column names - inspect with df.columns first
   - Don't assume variable names from previous iterations - check what's available above
   - Don't assume imports - explicitly import everything you use
+- A GPU is available - use it when training models
 - Suppress verbose output: warnings.filterwarnings('ignore'), verbose=-1 for LightGBM/XGBoost
 - Print key results and store metrics in variables (e.g., mae, rmse, f1_score)
 - Created variables persist to next iteration
@@ -790,6 +973,8 @@ Your code failed with an error. Fix it.
 {previous_output_context}
 ## Task
 Fix the code by addressing the root cause, not symptoms:
+
+Note: A GPU is available - use it when training models.
 
 Common error patterns and fixes:
 - **NameError** → Something is used but not defined. Either:
