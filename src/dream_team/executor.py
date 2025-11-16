@@ -9,6 +9,7 @@ import io
 import traceback
 import subprocess
 import re
+import importlib
 from typing import Dict, Any, Optional, Tuple
 import pandas as pd
 import numpy as np
@@ -213,6 +214,11 @@ class CodeExecutor:
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.PIPE
             )
+
+            # Invalidate import caches so Python can find the newly installed package
+            # Without this, Python might still think the module doesn't exist
+            importlib.invalidate_caches()
+
             self.installed_packages.add(package_name)
             print(f"   ✅ Successfully installed {package_name}")
             return True
