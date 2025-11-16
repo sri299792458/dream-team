@@ -454,7 +454,10 @@ Only output the agent specifications, nothing else.
                 else:
                     output_preview = f"\n\nOutput:\n```\n{output}\n```"
 
-            history_context = f"\n## Previous Iteration:\nApproach: {last['approach'][:200]}...\nMetrics: {last['metrics']}{output_preview}\n"
+            # Extract approach preview to avoid slicing syntax issues in f-string
+            approach = last['approach']
+            approach_preview = approach[:200] + "..." if len(approach) > 200 else approach
+            history_context = f"\n## Previous Iteration:\nApproach: {approach_preview}\nMetrics: {last['metrics']}{output_preview}\n"
 
         agenda = f"""
 **BE CONCISE.** Decide what to implement this iteration.
