@@ -820,7 +820,6 @@ You are a critic reviewing a team's proposal. Your job is to validate it against
 Be concise. Focus only on column name issues.
 """
 
-        from .meeting import IndividualMeeting
         validation_meeting = IndividualMeeting(save_dir=str(self.results_dir / 'meetings'))
         validated_approach = validation_meeting.run(
             agent=self.team_lead,  # Use team lead as critic
