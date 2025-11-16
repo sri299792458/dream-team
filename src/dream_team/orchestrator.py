@@ -134,14 +134,11 @@ class ExperimentOrchestrator:
             # Step 1: Team meeting to discuss approach
             approach = self._team_planning_meeting(problem_statement)
 
-            # Step 2: Validate approach against actual data
-            validated_approach = self._validate_approach(approach)
+            # Step 2: Agent implements the approach (writes code)
+            implementation = self._implement_approach(approach)
 
-            # Step 3: Agent implements the validated approach (writes code)
-            implementation = self._implement_approach(validated_approach)
-
-            # Step 4: Execute code and get results (with automatic error recovery)
-            results = self._execute_with_retry(implementation, validated_approach, max_retries=2)
+            # Step 3: Execute code and get results (with automatic error recovery)
+            results = self._execute_with_retry(implementation, approach, max_retries=2)
 
             # Step 5: Evaluate performance
             metrics = self._extract_metrics(results, target_metric)
@@ -159,8 +156,7 @@ class ExperimentOrchestrator:
 
             iteration_summary = {
                 'iteration': self.iteration,
-                'approach': approach,  # Original team proposal
-                'validated_approach': validated_approach,  # After critic review
+                'approach': approach,
                 'results': serializable_results,
                 'metrics': metrics,
                 'agents_snapshot': [a.title for a in self.all_agents]
@@ -857,23 +853,20 @@ Be concise. Focus only on column name issues.
                     previous_output_context = f"\n## Previous Iteration Output:\n```\n{output}\n```\n"
 
         task = f"""
-Implement the team's validated plan.
+Implement the team's plan.
 
-## Validated Plan:
+## Team's Plan:
 {approach}
 
-## Problem Statement (for reference):
-{self.problem_statement}
-
-## Available in execution context:
-- Pre-imported libraries: pandas (pd), numpy (np), pathlib.Path
-- Variables: {list(self.executor.data_context.keys())}
+## Available dataframes:
+{list(self.executor.data_context.keys())}
 {previous_output_context}
 ## Requirements:
-- GPU available - use it when training
-- If you need to verify columns exist, add print(df.columns)
+- Use GPU when training models
+- Write complete, executable code
+- Import what you need, define variables
 
-Output ONLY the Python code, wrapped in ```python code blocks.
+Output ONLY Python code in ```python blocks.
 """
 
         meeting = IndividualMeeting(save_dir=str(self.results_dir / 'meetings'))
@@ -1026,15 +1019,19 @@ Your code failed with an error. Fix it.
   Note: Missing packages are auto-installed, so if you see ModuleNotFoundError, just wait - it will retry automatically
 {previous_output_context}
 ## Task
-Fix the code:
+The error shows EXACTLY what's wrong. Read the traceback line number.
 
-**NameError**: Define it or import it
-**KeyError**: Add print(df.columns) to see actual column names
-**TypeError/AttributeError**: Check object type
+**For NameError `'X' is not defined`:**
+1. Look at the line number in traceback
+2. Find where you used variable `X` without defining it first
+3. Either: define `X = ...` BEFORE that line, or remove the usage
 
-GPU available.
+**For KeyError:**
+- Column doesn't exist. Print df.columns to see what's actually there
 
-Output ONLY the FIXED Python code, wrapped in ```python code blocks.
+**DO NOT output the same code again. Actually fix the specific line that failed.**
+
+Output ONLY the FIXED Python code in ```python blocks.
 """
 
         meeting = IndividualMeeting(save_dir=str(self.results_dir / 'meetings'))
