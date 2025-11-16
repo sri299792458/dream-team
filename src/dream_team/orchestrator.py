@@ -500,6 +500,59 @@ Only output the agent specifications, nothing else.
             approach_preview = approach[:200] + "..." if len(approach) > 200 else approach
             history_context = f"\n## Previous Iteration:\nApproach: {approach_preview}\nMetrics: {last['metrics']}{output_preview}\n"
 
+        # Each domain expert searches for papers in their field
+        research_context = ""
+        print("📚 Team members searching for research in their domains...\n")
+
+        all_papers = []
+        for agent in self.team_members:
+            try:
+                # Generate search query based on agent's expertise domain
+                # Focus on their DOMAIN (nutrition, psychology, etc.) not ML techniques
+                query_prompt = f"""
+Generate an academic search query for papers in this expert's domain.
+
+Expert: {agent.title}
+Expertise: {agent.expertise}
+Problem context: {problem_statement[:200]}
+
+Generate a search query (2-5 words) to find papers from this expert's academic field.
+Focus on the DOMAIN (nutrition, psychology, food science, etc.), NOT machine learning.
+
+Output ONLY the search query.
+"""
+                search_query = self.llm.generate(query_prompt, temperature=0.3).strip().strip('"\'')
+                print(f"   {agent.title} searching: '{search_query}'")
+
+                papers = self.research.research_topic(
+                    query=search_query,
+                    context=f"{agent.expertise} - looking for relevant domain knowledge",
+                    num_papers=2  # 2 papers per expert
+                )
+
+                if papers:
+                    # Add papers to agent's knowledge base
+                    for paper in papers:
+                        agent.knowledge_base.add_paper(paper)
+                    all_papers.extend([(agent.title, paper) for paper in papers])
+                    print(f"      Found {len(papers)} papers\n")
+                else:
+                    print(f"      No papers found\n")
+
+            except Exception as e:
+                print(f"      Error: {e}\n")
+
+        # Build research context showing which expert found which papers
+        if all_papers:
+            research_context = "\n## Domain Research (searched by team members):\n"
+            for agent_title, paper in all_papers:
+                research_context += f"\n**[{agent_title}]** {paper.title} ({', '.join(paper.authors[:2])} et al., {paper.year})\n"
+                research_context += f"   {paper.abstract[:200]}...\n"
+            research_context += "\n"
+            print(f"✅ Team found {len(all_papers)} domain-specific papers total\n")
+        else:
+            print("   No papers found across all searches\n")
+
         agenda = f"""
 **BE CONCISE.** Decide what to implement this iteration.
 
@@ -510,17 +563,20 @@ Only output the agent specifications, nothing else.
 {list(self.executor.data_context.keys())}
 
 {history_context}
+{research_context}
 
 ## Your Role:
 You are world-class experts in your fields. When suggesting approaches:
-- Ground your recommendations in established research and methods
-- Cite relevant papers/techniques when appropriate (e.g., "Smith et al. 2023 showed...")
-- Leverage your deep expertise to propose evidence-based solutions
+- **Domain Experts**: Reference the domain research YOU searched (shown with your name above)
+  - Apply insights from your field's literature to inform the approach
+  - Cite specific papers that support your recommendations (e.g., "Based on Smith et al. 2023...")
+- **Lead**: Synthesize domain expertise with practical ML implementation
+- Ground ALL recommendations in research evidence, not just intuition
 
 ## Your Task:
 In 2-3 sentences, describe what needs to be implemented this iteration.
 Focus on WHAT to do, not HOW to code it.
-Ground your suggestions in your expertise and cite research when relevant.
+Domain experts: cite your field's research. Lead: coordinate the plan.
 
 A coding agent will receive your discussion and implement it.
 
@@ -568,10 +624,10 @@ The team has discussed what to implement. Write Python code to implement their p
   (You can use any of these variables directly in your code)
 {previous_output_context}
 ## Requirements:
-- Write SELF-CONTAINED code - check what exists before using it:
-  - Variables listed above are available, everything else must be defined or created
-  - If you need a variable that might not exist, check first or recreate it from available data
-  - Import ALL symbols you use from libraries (don't forget constants, classes, functions)
+- Write complete, executable code:
+  - Use variables from "Available in execution context" - they are GUARANTEED to exist
+  - Define any new variables you need
+  - Import ALL symbols you use from libraries (functions, classes, constants)
 - DO NOT make assumptions:
   - Don't assume column names - inspect with df.columns first
   - Don't assume variable names from previous iterations - check what's available above
