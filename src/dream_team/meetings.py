@@ -447,36 +447,230 @@ Output ONLY the search query (2-4 words).
 class IndividualMeeting(Meeting):
     """One-on-one meeting with critic"""
 
+    def _react_individual_task(self, agent, task: str, temperature: float, max_steps: int = 2) -> str:
+        """
+        ReAct loop for individual task: agent reasons and searches papers before final output.
+
+        Pattern:
+        1. Thought: Think about the task and what approach to take
+        2. Action: Search papers to inform the decision
+        3. Observation: Papers found
+        4. (Repeat to build grounded thinking)
+        5. Final Answer: Complete the task with citations
+
+        Used for bootstrap recruitment and other individual tasks.
+        """
+        print(f"   🧠 {agent.title} using ReAct reasoning...")
+
+        react_history = []
+
+        for step in range(max_steps):
+            # Thought: Think about task and what to search
+            thought_prompt = f"""You are working on a task.
+
+Task: {task}
+
+{"Previous reasoning:" if react_history else ""}
+{self._format_react_history(react_history)}
+
+Based on YOUR EXPERTISE, think about how to approach this task.
+What do you need to know? What should you search for to inform your decision?
+
+Output format:
+Thought: [Your thinking about how to approach this task]
+Action: Search papers on "[2-4 word search query]" to inform this decision
+
+Be concise. Only output Thought and Action.
+"""
+
+            thought_action = self.llm.generate(
+                thought_prompt,
+                system_instruction=agent.prompt,
+                temperature=temperature * 0.8
+            )
+
+            # Parse thought and action
+            thought = ""
+            search_query = ""
+
+            for line in thought_action.split('\n'):
+                if line.startswith('Thought:'):
+                    thought = line.replace('Thought:', '').strip()
+                elif line.startswith('Action:'):
+                    action_text = line.replace('Action:', '').strip()
+                    # Extract query from "Search papers on 'X'" or similar
+                    if '"' in action_text:
+                        search_query = action_text.split('"')[1]
+                    elif "'" in action_text:
+                        search_query = action_text.split("'")[1]
+                    else:
+                        # Fallback: use last few words
+                        words = action_text.split()
+                        search_query = ' '.join(words[-4:]) if len(words) > 4 else action_text
+
+            if not search_query:
+                break  # Stop if can't parse
+
+            print(f"      Step {step+1} Thought: {thought[:80]}...")
+            print(f"      Step {step+1} Action: Search '{search_query}'")
+
+            # Action: Search papers
+            observation = self._search_and_observe(agent, search_query)
+
+            print(f"      Step {step+1} Observation: {observation[:100]}...")
+
+            react_history.append({
+                'thought': thought,
+                'action': f"Search papers on '{search_query}'",
+                'observation': observation
+            })
+
+        # Final Answer: Complete task with citations
+        final_prompt = f"""You are completing a task.
+
+Task: {task}
+
+Your ReAct reasoning process:
+{self._format_react_history(react_history)}
+
+Complete the task based on YOUR EXPERTISE and the research you've done.
+Use papers you found as SUPPORTING EVIDENCE to inform your decisions.
+
+**Cite relevant papers to support your recommendations.**
+Format citations as: (Author et al., Year)
+
+Be specific, detailed, and actionable.
+"""
+
+        final_output = self.llm.generate(
+            final_prompt,
+            system_instruction=agent.prompt,
+            temperature=temperature * 0.9
+        )
+
+        return final_output
+
+    def _format_react_history(self, history: list) -> str:
+        """Format ReAct history for prompts"""
+        if not history:
+            return ""
+
+        formatted = []
+        for i, step in enumerate(history, 1):
+            formatted.append(f"Step {i}:")
+            formatted.append(f"  Thought: {step['thought']}")
+            formatted.append(f"  Action: {step['action']}")
+            formatted.append(f"  Observation: {step['observation']}")
+
+        return '\n'.join(formatted)
+
+    def _search_and_observe(self, agent, search_query: str) -> str:
+        """Search papers and return observation summary with key insights"""
+        try:
+            # Limit query length
+            if len(search_query) > 50:
+                search_query = search_query[:50]
+
+            # Search
+            raw_results = self.research_api.search(
+                query=search_query,
+                limit=5,
+                year_range=(2018, 2025)
+            )
+
+            if not raw_results:
+                return "No relevant papers found."
+
+            # Get existing papers
+            existing_titles = [p.title for p in agent.knowledge_base.papers]
+
+            # Add new papers with analysis
+            papers_found = []
+            for result in raw_results[:2]:
+                if result.title not in existing_titles:
+                    paper = result.to_paper()
+
+                    # Analyze paper to extract key insights
+                    analysis_prompt = f"""Extract 2-3 key actionable insights from this paper abstract.
+
+Title: {paper.title}
+Abstract: {paper.abstract}
+
+Output ONLY a JSON array of 2-3 brief insights:
+["insight 1", "insight 2", "insight 3"]
+
+Focus on methods, findings, or techniques that could be applied."""
+
+                    try:
+                        insights = self.llm.generate_json(analysis_prompt, temperature=0.3)
+                        if isinstance(insights, list):
+                            paper.key_findings = insights[:3]
+                    except Exception:
+                        # Fallback: use first sentence of abstract
+                        paper.key_findings = [paper.abstract.split('.')[0] + '.'] if paper.abstract else []
+
+                    agent.knowledge_base.add_paper(paper)
+                    papers_found.append(paper)
+                    print(f"         ✓ {paper.title[:60]}... ({paper.year})")
+
+            if not papers_found:
+                return "Papers already in knowledge base."
+
+            # Build observation summary with insights
+            observation = f"Found {len(papers_found)} relevant papers:\n"
+            observations = []
+            for paper in papers_found:
+                obs = f"- {paper.title[:60]}... ({', '.join(paper.authors[:2])} et al., {paper.year})"
+                if paper.key_findings:
+                    obs += f"\n  Key insights: {'; '.join(paper.key_findings[:2])}"
+                observations.append(obs)
+
+            observation += '\n'.join(observations)
+            return observation
+
+        except Exception as e:
+            return f"Search failed: {e}"
+
     def run(
         self,
         agent: Agent,
         task: str,
         critic_agent: Optional[Agent] = None,
         num_iterations: int = 2,
-        temperature: float = 0.7
+        temperature: float = 0.7,
+        use_react: bool = False
     ) -> str:
         """
         Run individual meeting with iterative refinement
+
+        Args:
+            use_react: If True and research_api available, use ReAct pattern to search papers
 
         Returns: Final output
         """
 
         print(f"\n👤 INDIVIDUAL MEETING")
         print(f"   Agent: {agent.title}")
-        print(f"   Iterations: {num_iterations}\n")
+        print(f"   Iterations: {num_iterations}")
+        if use_react and self.research_api:
+            print(f"   Using ReAct: Yes")
+        print()
 
-        # Initial work
-        work_prompt = f"""Task: {task}
+        # Initial work - use ReAct if requested and API available
+        if use_react and self.research_api:
+            output = self._react_individual_task(agent, task, temperature)
+        else:
+            work_prompt = f"""Task: {task}
 
 Complete this task drawing on your expertise and knowledge base.
 Be specific, detailed, and actionable.
 """
 
-        output = self.llm.generate(
-            work_prompt,
-            system_instruction=agent.prompt,
-            temperature=temperature
-        )
+            output = self.llm.generate(
+                work_prompt,
+                system_instruction=agent.prompt,
+                temperature=temperature
+            )
 
         self.add_message(agent.title, output)
         agent.meetings_participated += 1

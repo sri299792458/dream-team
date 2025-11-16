@@ -338,111 +338,8 @@ Output ONLY the Python code, wrapped in ```python code blocks.
             print(results['error'])
             # Continue anyway - PI can recruit based on problem statement
 
-        # PI reviews results and recruits team
+        # PI reviews results and recruits team using ReAct
         print(f"\n{self.team_lead.title} reviewing exploration results and recruiting team...\n")
-
-        # Fetch research to inform recruitment decisions
-        # Bootstrap always uses Stage 1: highly-cited review papers
-        research_summary = ""
-        print("📚 Searching for highly-cited review papers on the problem...\n")
-        try:
-            # Use LLM to extract academic search terms from problem statement
-            query_extraction_prompt = f"""
-Extract ONE concise academic search query from this problem statement.
-
-Problem: {problem_statement[:300]}
-
-Output only 2-3 words, academic terminology.
-Examples: "shelf life prediction", "time series forecasting", "image segmentation"
-"""
-            search_query = self.llm.generate(query_extraction_prompt, temperature=0.3).strip()
-            # Clean up - remove quotes if LLM added them
-            search_query = search_query.strip('"\'')
-            print(f"   Search query: '{search_query}'")
-
-            # Bootstrap: Search for highly-cited review papers (wider year range, sort by citations)
-            print(f"   Stage 1: Searching highly-cited papers on '{search_query}'...")
-            raw_results = self.research.ss_api.search(
-                query=search_query,
-                limit=20,
-                year_range=(2000, 2024)  # Wider range to find influential older papers
-            )
-
-            if raw_results:
-                # Sort by citation count to get most influential papers
-                raw_results.sort(key=lambda p: p.citation_count, reverse=True)
-                papers_to_analyze = raw_results[:3]  # Top 3 most cited
-
-                print(f"   Found {len(raw_results)} papers, analyzing top {len(papers_to_analyze)} by citations...")
-
-                # Use LLM to analyze relevance
-                from .agent import Paper
-                papers = []
-                for i, result in enumerate(papers_to_analyze):
-                    print(f"   Analyzing paper {i+1}: {result.title[:60]}... (citations: {result.citation_count})")
-
-                    analysis_prompt = f"""You are analyzing a scientific paper for relevance to a problem.
-
-Problem: {problem_statement[:300]}
-
-Paper Title: {result.title}
-Authors: {', '.join(result.authors)}
-Year: {result.year}
-Citations: {result.citation_count}
-Abstract: {result.abstract}
-
-Tasks:
-1. Rate relevance to the problem (0.0-1.0)
-2. Extract 2-3 key findings or methodologies
-3. Summarize applicability in one sentence
-
-Respond in JSON format:
-{{
-    "relevance_score": 0.0-1.0,
-    "key_findings": ["finding 1", "finding 2"],
-    "applicability": "brief summary"
-}}
-"""
-
-                    try:
-                        analysis = self.llm.generate_json(analysis_prompt, temperature=0.3)
-                        paper = Paper(
-                            title=result.title,
-                            authors=result.authors,
-                            year=result.year,
-                            abstract=result.abstract,
-                            key_findings=analysis.get("key_findings", []),
-                            relevance_score=analysis.get("relevance_score", 0.0),
-                            semantic_scholar_id=result.paper_id,
-                            citation_count=result.citation_count
-                        )
-                        papers.append(paper)
-                    except Exception as e:
-                        print(f"   ⚠️  Error analyzing paper: {e}")
-                        # Fallback: create paper without LLM analysis
-                        paper = Paper(
-                            title=result.title,
-                            authors=result.authors,
-                            year=result.year,
-                            abstract=result.abstract,
-                            semantic_scholar_id=result.paper_id,
-                            citation_count=result.citation_count,
-                            relevance_score=0.5
-                        )
-                        papers.append(paper)
-
-                if papers:
-                    research_summary = "\n## Highly-Cited Research on This Problem:\n"
-                    for paper in papers:
-                        research_summary += f"- {paper.title} ({paper.year}, {paper.citation_count} citations)\n"
-                        if paper.key_findings:
-                            research_summary += f"  Key findings: {'; '.join(paper.key_findings[:2])}\n"
-                    research_summary += "\n"
-            else:
-                print("   No papers found")
-
-        except Exception as e:
-            print(f"   Note: Research search skipped (API rate limit or error): {e}\n")
 
         recruitment_task = f"""
 Based on the problem and exploration results, decide what expertise you need on your team.
@@ -453,24 +350,27 @@ Based on the problem and exploration results, decide what expertise you need on 
 ## Exploration Results:
 {results['output'][:2000] if results['success'] else "Exploration failed, but you have the problem statement."}
 
-{research_summary}
-
 ## Your Task:
 List 1-3 team members you want to recruit. For each, provide:
 - Title (e.g., "ML Strategist", "Domain Expert", "Data Analyst")
 - Expertise (what they should know)
 - Role (what they'll contribute)
 
-Be specific about the skills needed based on what you learned.
+Be specific about the skills needed based on what you learned from exploration and research papers.
 
 Format your response as a simple list, one team member per line.
 """
 
-        recruitment_meeting = IndividualMeeting(save_dir=str(self.results_dir / 'meetings'))
+        # Use ReAct so PI can search papers while thinking about recruitment
+        recruitment_meeting = IndividualMeeting(
+            save_dir=str(self.results_dir / 'meetings'),
+            research_api=self.research.ss_api if hasattr(self, 'research') else None
+        )
         recruitment_plan = recruitment_meeting.run(
             agent=self.team_lead,
             task=recruitment_task,
-            num_iterations=1
+            num_iterations=1,
+            use_react=True  # PI uses ReAct to search papers during recruitment
         )
 
         print(f"Recruitment plan:\n{recruitment_plan}\n")
