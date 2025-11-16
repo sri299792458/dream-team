@@ -304,12 +304,12 @@ Output ONLY the Python code, wrapped in ```python code blocks.
         try:
             # Use LLM to extract academic search terms from problem statement
             query_extraction_prompt = f"""
-Extract 2-3 key academic search terms from this problem statement for searching research papers.
+Extract ONE concise academic search query from this problem statement.
 
 Problem: {problem_statement[:300]}
 
-Output ONLY the search query (2-5 words, academic terminology, no quotes).
-Examples: "shelf life prediction", "time series forecasting", "image classification deep learning"
+Output only 2-3 words, academic terminology.
+Examples: "shelf life prediction", "time series forecasting", "image segmentation"
 """
             search_query = self.llm.generate(query_extraction_prompt, temperature=0.3).strip()
             # Clean up - remove quotes if LLM added them
@@ -320,8 +320,8 @@ Examples: "shelf life prediction", "time series forecasting", "image classificat
             print(f"   Stage 1: Searching highly-cited papers on '{search_query}'...")
             raw_results = self.research.ss_api.search(
                 query=search_query,
-                limit=15,
-                year_range=(2010, 2025)  # Wider range to find influential papers
+                limit=20,
+                year_range=(2000, 2024)  # Wider range to find influential older papers
             )
 
             if raw_results:
@@ -622,8 +622,8 @@ Output ONLY the search query (2-5 words).
                     # Search with wider year range, then sort by citations
                     raw_results = self.research.ss_api.search(
                         query=search_query,
-                        limit=20,  # Get more results
-                        year_range=(2010, 2025)  # Wide range to catch classics
+                        limit=20,
+                        year_range=(2000, 2024)  # Wide range to catch highly-cited older papers
                     )
 
                     # Sort by citation count (descending) to prioritize seminal/influential papers
