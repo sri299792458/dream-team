@@ -642,7 +642,7 @@ Output ONLY the search query (2-5 words).
                     print(f"   {agent.title} [Stage 2: Backward citations from reviews]")
 
                     # Get references from the most highly-cited paper in their KB
-                    most_cited_paper = max(agent.knowledge_base.papers, key=lambda p: p.semantic_scholar_id and 1000 or 0)
+                    most_cited_paper = max(agent.knowledge_base.papers, key=lambda p: p.citation_count if p.semantic_scholar_id else 0)
 
                     if most_cited_paper.semantic_scholar_id:
                         # Get papers this review cites (backward search)
