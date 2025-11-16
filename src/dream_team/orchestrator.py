@@ -169,6 +169,20 @@ class ExperimentOrchestrator:
                 self.results_dir / f'iteration_{self.iteration:02d}.json'
             )
 
+            # Iteration summary
+            print(f"\n{'='*60}")
+            print(f"ITERATION {self.iteration} SUMMARY")
+            print(f"{'='*60}")
+            print(f"Status: {'✅ Success' if results['success'] else '❌ Failed'}")
+            if metrics:
+                for k, v in metrics.items():
+                    print(f"{k}: {v:.4f}" if isinstance(v, float) else f"{k}: {v}")
+            else:
+                print("No metrics extracted")
+            if self.best_metric is not None:
+                print(f"Best {target_metric} so far: {self.best_metric:.4f}")
+            print(f"{'='*60}\n")
+
             # Step 6: Check if target achieved
             if self._check_goal_achieved(metrics, target_metric, target_score, minimize_metric):
                 print(f"\n🎯 Target achieved! {target_metric}: {metrics.get(target_metric)}")
@@ -722,7 +736,10 @@ Output ONLY the search query (2-5 words).
 
                     if new_papers:
                         all_papers.extend([(agent.title, paper) for paper in new_papers])
-                        print(f"      Found {len(new_papers)} new papers\n")
+                        print(f"      Added to {agent.title}'s knowledge base:")
+                        for paper in new_papers:
+                            print(f"        • {paper.title[:80]}... ({paper.year}, {paper.citation_count} cites)")
+                        print()
                     else:
                         print(f"      Found {len(papers)} papers (all duplicates, skipped)\n")
                 else:
@@ -777,6 +794,15 @@ Team members: Propose what to implement (2-3 sentences), citing YOUR field's res
 Lead: Ask 1-2 questions, then synthesize proposals.
 """
 
+        # Log agenda summary (not full text - too verbose)
+        print("\n📋 TEAM MEETING CONTEXT:")
+        print(f"   Dataframes: {list(self.executor.data_context.keys())}")
+        if history_context:
+            print(f"   Previous metrics: {last['metrics']}")
+        if all_papers:
+            print(f"   Research papers available: {len(all_papers)}")
+        print()
+
         meeting = TeamMeeting(save_dir=str(self.results_dir / 'meetings'))
         summary = meeting.run(
             team_lead=self.team_lead,
@@ -784,6 +810,17 @@ Lead: Ask 1-2 questions, then synthesize proposals.
             agenda=agenda,
             num_rounds=1  # Reduced from 2 to 1 for speed
         )
+
+        # Check if team members actually cited their papers
+        print("\n📊 PAPER CITATION CHECK:")
+        for agent in self.team_members:
+            if agent.knowledge_base.papers:
+                print(f"\n{agent.title} has {len(agent.knowledge_base.papers)} papers in knowledge base:")
+                for paper in agent.knowledge_base.papers[:3]:
+                    cited = paper.title[:30] in summary or paper.authors[0] in summary if paper.authors else False
+                    status = "✅ CITED" if cited else "❌ NOT CITED"
+                    print(f"  {status}: {paper.title[:60]}... ({paper.year})")
+        print()
 
         return summary
 
@@ -884,7 +921,16 @@ Output ONLY Python code in ```python blocks.
         code_file.parent.mkdir(exist_ok=True)
         code_file.write_text(code)
 
-        print(f"   Code saved to: {code_file}\n")
+        # Log code preview
+        code_lines = code.split('\n')
+        print(f"   Generated {len(code_lines)} lines of code")
+        print(f"   Saved to: {code_file}")
+
+        # Show first few imports to see what libraries are being used
+        imports = [line for line in code_lines[:20] if line.strip().startswith(('import ', 'from '))]
+        if imports:
+            print(f"   Libraries: {', '.join([imp.split()[1].split('.')[0] for imp in imports[:5]])}")
+        print()
 
         return code
 
@@ -947,7 +993,8 @@ Output ONLY Python code in ```python blocks.
 
             # If failed and we have retries left, ask agent to fix
             if attempt < max_retries:
-                print(f"   🔧 Asking agent to fix the error...\n")
+                print(f"   ❌ Error: {result['error']}")
+                print(f"   🔧 Asking agent to fix...\n")
                 current_code = self._fix_code_error(
                     failed_code=current_code,
                     error=result['error'],
