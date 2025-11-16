@@ -807,10 +807,10 @@ The team has discussed what to implement. Write Python code to implement their p
   - Define any new variables you need
   - Import ALL symbols you use from libraries (functions, classes, constants)
   - Optional: Save large objects to disk (e.g., `joblib.dump(model, artifacts_dir / 'model.pkl')`) if useful for later
-- DO NOT make assumptions:
-  - Don't assume column names - inspect with df.columns first
-  - Don't assume variable names from previous iterations - check what's available above
-  - Don't assume imports - explicitly import everything you use
+- CRITICAL - Never assume, always verify:
+  - Before using df columns: Add `print(df.columns)` to see what exists
+  - Before merging: Check column names in BOTH dataframes first
+  - Only use variables listed in "Available in execution context" above
 - A GPU is available - use it when training models
 - Suppress verbose output: warnings.filterwarnings('ignore'), verbose=-1 for LightGBM/XGBoost
 - Print key results and store metrics in variables (e.g., mae, rmse, f1_score)
@@ -974,19 +974,15 @@ Fix the code by addressing the root cause, not symptoms:
 Note: A GPU is available - use it when training models.
 
 Common error patterns and fixes:
-- **NameError** → Something is used but not defined. Either:
-  - Import it (check library docs for what to import)
-  - Define it as a variable
-  - Check if it's a typo
-- **KeyError** → Column/key doesn't exist. Inspect first: df.columns, df.head()
-- **AttributeError** → Object doesn't have that method. Check type and available methods.
-- **TypeError** → Wrong type passed. Check what function expects.
+- **KeyError** (column/key doesn't exist):
+  1. FIRST: Add print statements to see what exists: `print(df.columns)` or `print(dict.keys())`
+  2. THEN: Use the actual column/key names you see
+  3. DO NOT assume or guess column names
+- **NameError** → Import it, define it, or check spelling
+- **AttributeError** → Check object type and available methods
+- **TypeError** → Check what the function expects
 
-General debugging approach:
-1. Read the error message - it tells you exactly what's wrong
-2. Look at the traceback line number - that's where it failed
-3. Check what's available (imports, variables, columns)
-4. Fix the actual problem, don't work around it
+CRITICAL: For KeyError, you MUST add inspection code first. Do not assume column names.
 
 Output ONLY the FIXED Python code, wrapped in ```python code blocks.
 """
