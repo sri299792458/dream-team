@@ -57,6 +57,7 @@ class ExperimentOrchestrator:
         self.experiment_history = []
         self.best_metric = None
         self.bootstrap_completed = len(team_members) > 0  # Skip bootstrap if team already exists
+        self.column_schemas = {}  # Will be populated during bootstrap
 
     def run(
         self,
@@ -305,6 +306,18 @@ Output ONLY the Python code, wrapped in ```python code blocks.
             print("-" * 60)
             print(results['output'])
             print("-" * 60)
+
+            # Extract column schemas from explored dataframes
+            print("\n📋 Extracting column schemas...")
+            column_schemas = {}
+            for df_name in ['batches_train', 'batches_test', 'products', 'sites', 'regions']:
+                df = self.executor.get_variable(df_name)
+                if df is not None and hasattr(df, 'columns'):
+                    column_schemas[df_name] = list(df.columns)
+                    print(f"   {df_name}: {len(df.columns)} columns - {list(df.columns)[:10]}...")
+
+            # Store schemas for use in team meetings
+            self.column_schemas = column_schemas
         else:
             print("❌ Exploration failed after retries:")
             print(results['error'])
@@ -764,14 +777,12 @@ Output ONLY the search query (2-5 words).
         else:
             print("   No papers found across all searches\n")
 
-        # Extract column information from bootstrap output if available
+        # Use column schemas extracted during bootstrap
         columns_summary = ""
-        if self.experiment_history and self.experiment_history[0].get('iteration', -1) == 0:
-            output = self.experiment_history[0]['results'].get('output', '')
-            # Extract lines that show "Columns of X:"
-            columns_lines = [line for line in output.split('\n') if 'Columns of' in line or (line.startswith('[') and 'batch_id' in line or 'sku_id' in line or 'site_id' in line or 'region_id' in line)]
-            if columns_lines:
-                columns_summary = "\n## AVAILABLE COLUMNS (from exploration - ONLY use these):\n" + "\n".join(columns_lines[:20]) + "\n"
+        if hasattr(self, 'column_schemas') and self.column_schemas:
+            columns_summary = "\n## AVAILABLE COLUMNS (ONLY use these exact column names):\n"
+            for df_name, cols in self.column_schemas.items():
+                columns_summary += f"\n{df_name}: {cols}\n"
 
         agenda = f"""
 **BE CONCISE.**
@@ -889,6 +900,13 @@ Be concise. Focus only on column name issues.
                 else:
                     previous_output_context = f"\n## Previous Iteration Output:\n```\n{output}\n```\n"
 
+        # Build column schema info for coding agent
+        schema_info = ""
+        if hasattr(self, 'column_schemas') and self.column_schemas:
+            schema_info = "\n## DataFrame Schemas (use EXACT column names):\n"
+            for df_name, cols in self.column_schemas.items():
+                schema_info += f"{df_name}: {cols}\n"
+
         task = f"""
 Implement the team's plan.
 
@@ -897,11 +915,13 @@ Implement the team's plan.
 
 ## Available dataframes:
 {list(self.executor.data_context.keys())}
+{schema_info}
 {previous_output_context}
 ## Requirements:
 - Use GPU when training models
 - Write complete, executable code
 - Import what you need, define variables
+- Use the EXACT column names from DataFrame Schemas above
 
 Output ONLY Python code in ```python blocks.
 """
@@ -1064,6 +1084,9 @@ Your code failed with an error. Fix it.
 - Pre-imported libraries: pandas, numpy, pathlib
 - Variables: {list(self.executor.data_context.keys())}
   Note: Missing packages are auto-installed, so if you see ModuleNotFoundError, just wait - it will retry automatically
+
+## DataFrame Schemas (use EXACT column names):
+{self._format_column_schemas()}
 {previous_output_context}
 ## Task
 The error shows EXACTLY what's wrong. Read the traceback line number.
@@ -1073,8 +1096,9 @@ The error shows EXACTLY what's wrong. Read the traceback line number.
 2. Find where you used variable `X` without defining it first
 3. Either: define `X = ...` BEFORE that line, or remove the usage
 
-**For KeyError:**
-- Column doesn't exist. Print df.columns to see what's actually there
+**For KeyError (column doesn't exist):**
+- Check the DataFrame Schemas above for the EXACT column name
+- Use only columns that exist in the schemas
 
 **DO NOT output the same code again. Actually fix the specific line that failed.**
 
@@ -1092,6 +1116,16 @@ Output ONLY the FIXED Python code in ```python blocks.
         fixed_code = extract_code_from_text(code_output)
 
         return fixed_code
+
+    def _format_column_schemas(self) -> str:
+        """Format column schemas for display in prompts"""
+        if not hasattr(self, 'column_schemas') or not self.column_schemas:
+            return "No schema information available."
+
+        result = ""
+        for df_name, cols in self.column_schemas.items():
+            result += f"{df_name}: {cols}\n"
+        return result
 
     def _extract_metrics(self, results: Dict[str, Any], target_metric: str) -> Dict[str, float]:
         """Extract metrics from execution results, ensuring JSON-serializable values only"""
