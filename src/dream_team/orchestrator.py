@@ -134,16 +134,19 @@ class ExperimentOrchestrator:
             # Step 1: Team meeting to discuss approach
             approach = self._team_planning_meeting(problem_statement)
 
-            # Step 2: Agent implements the approach (writes code)
-            implementation = self._implement_approach(approach)
+            # Step 2: Validate approach against actual data
+            validated_approach = self._validate_approach(approach)
 
-            # Step 3: Execute code and get results (with automatic error recovery)
-            results = self._execute_with_retry(implementation, approach, max_retries=2)
+            # Step 3: Agent implements the validated approach (writes code)
+            implementation = self._implement_approach(validated_approach)
 
-            # Step 4: Evaluate performance
+            # Step 4: Execute code and get results (with automatic error recovery)
+            results = self._execute_with_retry(implementation, validated_approach, max_retries=2)
+
+            # Step 5: Evaluate performance
             metrics = self._extract_metrics(results, target_metric)
 
-            # Step 5: Record iteration
+            # Step 6: Record iteration
             # Extract only serializable parts of results
             serializable_results = {
                 'success': results['success'],
@@ -156,7 +159,8 @@ class ExperimentOrchestrator:
 
             iteration_summary = {
                 'iteration': self.iteration,
-                'approach': approach,
+                'approach': approach,  # Original team proposal
+                'validated_approach': validated_approach,  # After critic review
                 'results': serializable_results,
                 'metrics': metrics,
                 'agents_snapshot': [a.title for a in self.all_agents]
@@ -787,6 +791,56 @@ Lead: Ask 1-2 questions, then synthesize proposals.
 
         return summary
 
+    def _validate_approach(self, approach: str) -> str:
+        """Validate team's proposal against actual data before implementation"""
+        print("🔍 Validating team's proposal against actual data...\n")
+
+        # Get exploration output to see what columns actually exist
+        exploration_output = ""
+        if self.experiment_history and self.experiment_history[0].get('iteration', -1) == 0:
+            exploration_output = self.experiment_history[0]['results'].get('output', '')
+
+        validation_task = f"""
+You are a critic reviewing a team's proposal. Your job is to validate it against the actual data.
+
+## Team's Proposal:
+{approach}
+
+## Exploration Output (what columns ACTUALLY exist):
+{exploration_output[:4000]}
+
+## Your Task:
+1. Check if the proposal mentions any columns that DON'T exist in the exploration output
+2. If columns are hallucinated, identify what actual columns could be used instead
+3. Output a CORRECTED version of the proposal using ONLY columns that actually exist
+
+**If the proposal is valid:** Output "VALIDATED: " followed by the original proposal.
+**If columns are hallucinated:** Output "CORRECTED: " followed by the corrected proposal, explaining what you changed.
+
+Be concise. Focus only on column name issues.
+"""
+
+        from .meeting import IndividualMeeting
+        validation_meeting = IndividualMeeting(save_dir=str(self.results_dir / 'meetings'))
+        validated_approach = validation_meeting.run(
+            agent=self.team_lead,  # Use team lead as critic
+            task=validation_task,
+            num_iterations=1
+        )
+
+        # Extract the validated/corrected approach
+        if "CORRECTED:" in validated_approach:
+            print("⚠️  Critic found issues and corrected the proposal\n")
+            corrected = validated_approach.split("CORRECTED:", 1)[1].strip()
+            return corrected
+        elif "VALIDATED:" in validated_approach:
+            print("✅ Critic validated the proposal\n")
+            return approach
+        else:
+            # Fallback: use the validation output as-is
+            print("⚠️  Using critic's output\n")
+            return validated_approach
+
     def _implement_approach(self, approach: str) -> str:
         """Have coding agent write code to implement the approach"""
         print(f"💻 {self.coding_agent.title} implementing approach...\n")
@@ -804,9 +858,9 @@ Lead: Ask 1-2 questions, then synthesize proposals.
                     previous_output_context = f"\n## Previous Iteration Output:\n```\n{output}\n```\n"
 
         task = f"""
-The team has discussed what to implement. Write Python code to implement their plan.
+Implement the team's validated plan.
 
-## Team's Discussion:
+## Validated Plan:
 {approach}
 
 ## Problem Statement (for reference):
@@ -815,12 +869,10 @@ The team has discussed what to implement. Write Python code to implement their p
 ## Available in execution context:
 - Pre-imported libraries: pandas (pd), numpy (np), pathlib.Path
 - Variables: {list(self.executor.data_context.keys())}
-  (You can use any of these variables directly in your code)
 {previous_output_context}
 ## Requirements:
-- Use variables from "Available in execution context" above
-- Column names: Check "Previous Iteration Output" for df.columns, or add print(df.columns)
 - GPU available - use it when training
+- If you need to verify columns exist, add print(df.columns)
 
 Output ONLY the Python code, wrapped in ```python code blocks.
 """
