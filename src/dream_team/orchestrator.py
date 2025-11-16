@@ -170,6 +170,9 @@ class ExperimentOrchestrator:
                 self.results_dir / f'iteration_{self.iteration:02d}.json'
             )
 
+            # Update best metric BEFORE printing summary
+            self._update_best_metric(metrics, target_metric, minimize_metric)
+
             # Iteration summary
             print(f"\n{'='*60}")
             print(f"ITERATION {self.iteration} SUMMARY")
@@ -194,9 +197,6 @@ class ExperimentOrchestrator:
 
             if should_evolve:
                 self._evolve_team(problem_statement, metrics)
-
-            # Step 8: Update best metric
-            self._update_best_metric(metrics, target_metric, minimize_metric)
 
         # Final summary
         final_summary = self._generate_final_summary()
@@ -614,168 +614,9 @@ Only output the agent specifications, nothing else.
             approach_preview = approach[:200] + "..." if len(approach) > 200 else approach
             history_context = f"\n## Previous Iteration:\nApproach: {approach_preview}\nMetrics: {last['metrics']}{output_preview}\n"
 
-        # Each domain expert searches for papers in their field
+        # Research context removed - agents can propose based on their expertise
+        # TODO: Add ability for agents to search papers during meeting when making proposals
         research_context = ""
-        print("📚 Team members searching for research in their domains...\n")
-
-        all_papers = []
-        for agent in self.team_members:
-            try:
-                # Multi-stage citation-aware search strategy:
-                # Stage 1 (0 papers): Highly-cited reviews
-                # Stage 2 (1-3 papers): Backward citations (what did reviews cite?)
-                # Stage 3+ (4+ papers): Forward citations + recent work
-                num_papers_in_kb = len(agent.knowledge_base.papers)
-
-                # Get existing paper titles and IDs to avoid duplicates
-                existing_titles = [p.title for p in agent.knowledge_base.papers]
-                existing_paper_ids = [p.semantic_scholar_id for p in agent.knowledge_base.papers if p.semantic_scholar_id]
-
-                # STAGE 1: Highly-cited reviews and foundational papers
-                if num_papers_in_kb == 0:
-                    query_prompt = f"""
-Generate a search query to find foundational review papers in THIS SPECIFIC expert's unique domain.
-
-Expert: {agent.title}
-Expertise: {agent.expertise}
-
-Generate a search query (2-5 words) to find REVIEW PAPERS or META-ANALYSES specific to THIS expert's field.
-Make the query SPECIFIC to their domain, not generic.
-
-Examples:
-- For "Food Science Expert": "food spoilage mechanisms review"
-- For "Behavioral Psychologist": "behavior change interventions meta-analysis"
-- For "Supply Chain Expert": "cold chain management review"
-- For "ML Engineer": "time series forecasting review"
-
-Focus on THEIR SPECIFIC DOMAIN. Each expert should search different topics.
-
-Output ONLY the search query (2-5 words).
-"""
-                    search_query = self.llm.generate(query_prompt, temperature=0.3).strip().strip('"\'')
-                    print(f"   {agent.title} [Stage 1: Highly-cited reviews] '{search_query}'")
-
-                    # Search with wider year range, then sort by citations
-                    raw_results = self.research.ss_api.search(
-                        query=search_query,
-                        limit=20,
-                        year_range=(2000, 2024)  # Wide range to catch highly-cited older papers
-                    )
-
-                    # Sort by citation count (descending) to prioritize seminal/influential papers
-                    raw_results.sort(key=lambda p: p.citation_count, reverse=True)
-                    papers_to_analyze = raw_results[:3]  # Take top 3 most cited
-
-                    papers = []
-                    for result in papers_to_analyze:
-                        paper = result.to_paper()
-                        papers.append(paper)
-
-                    print(f"      Found {len(papers)} highly-cited papers (avg citations: {sum(p.citation_count for p in raw_results[:3])/max(len(raw_results[:3]), 1):.0f})")
-
-                # STAGE 2: Backward citation search (what did the reviews cite?)
-                elif num_papers_in_kb <= 3:
-                    print(f"   {agent.title} [Stage 2: Backward citations from reviews]")
-
-                    # Get references from the most highly-cited paper in their KB
-                    most_cited_paper = max(agent.knowledge_base.papers, key=lambda p: p.citation_count if p.semantic_scholar_id else 0)
-
-                    if most_cited_paper.semantic_scholar_id:
-                        # Get papers this review cites (backward search)
-                        raw_results = self.research.ss_api.get_references(
-                            paper_id=most_cited_paper.semantic_scholar_id,
-                            limit=20
-                        )
-
-                        if raw_results:
-                            # Sort by citation count to get seminal works
-                            raw_results.sort(key=lambda p: p.citation_count, reverse=True)
-                            papers_to_analyze = [p for p in raw_results[:5] if p.paper_id not in existing_paper_ids][:2]
-
-                            papers = [p.to_paper() for p in papers_to_analyze]
-                            print(f"      Found {len(papers)} seminal papers from references")
-                        else:
-                            papers = []
-                            print(f"      No references found (API error or empty)")
-                    else:
-                        papers = []
-                        print(f"      No paper ID available for backward search")
-
-                # STAGE 3+: Forward citations + recent work
-                else:
-                    print(f"   {agent.title} [Stage 3: Recent work & forward citations]")
-
-                    existing_papers_summary = ", ".join([p.title[:50] for p in agent.knowledge_base.papers[:3]])
-                    query_prompt = f"""
-Generate a search query for RECENT papers (2022-2025) on a specific aspect of this expert's domain.
-
-Expert: {agent.title}
-Expertise: {agent.expertise}
-Problem: {problem_statement[:200]}
-Current approach: {history_context[:300] if history_context else "Baseline model"}
-Papers already found: {existing_papers_summary}
-
-Generate a search query (2-5 words) for RECENT papers that:
-1. Address specific challenges in the current approach
-2. Are different from what they already have
-3. Are relevant to this expert's domain
-
-Focus on a DIFFERENT aspect than their previous searches.
-
-Output ONLY the search query (2-5 words).
-"""
-                    search_query = self.llm.generate(query_prompt, temperature=0.5).strip().strip('"\'')
-                    print(f"      Query: '{search_query}'")
-
-                    # Recent papers only
-                    raw_results = self.research.ss_api.search(
-                        query=search_query,
-                        limit=10,
-                        year_range=(2022, 2025)
-                    )
-
-                    papers_to_analyze = [p for p in raw_results[:2] if p.title not in existing_titles]
-                    papers = [p.to_paper() for p in papers_to_analyze]
-                    print(f"      Found {len(papers)} recent papers")
-
-                if papers:
-                    # Add NEW papers to agent's knowledge base (avoid duplicates)
-                    new_papers = []
-                    for paper in papers:
-                        if paper.title not in existing_titles:
-                            agent.knowledge_base.add_paper(paper)
-                            new_papers.append(paper)
-                            existing_titles.append(paper.title)  # Track to avoid dups within this search
-
-                    if new_papers:
-                        all_papers.extend([(agent.title, paper) for paper in new_papers])
-                        print(f"      Added to {agent.title}'s knowledge base:")
-                        for paper in new_papers:
-                            print(f"        • {paper.title[:80]}... ({paper.year}, {paper.citation_count} cites)")
-                        print()
-                    else:
-                        print(f"      Found {len(papers)} papers (all duplicates, skipped)\n")
-                else:
-                    print(f"      No papers found\n")
-
-            except Exception as e:
-                print(f"      Error: {e}\n")
-
-        # Build research context showing which expert found which papers
-        if all_papers:
-            research_context = "\n## Domain Research (searched by team members):\n"
-            for agent_title, paper in all_papers:
-                # Show citation count to indicate paper influence/quality
-                citations_info = ""
-                if paper.citation_count > 0:
-                    citations_info = f" [{paper.citation_count} cites]"
-
-                research_context += f"\n**[{agent_title}]** {paper.title}{citations_info} ({', '.join(paper.authors[:2])} et al., {paper.year})\n"
-                research_context += f"   {paper.abstract[:200]}...\n"
-            research_context += "\n"
-            print(f"✅ Team found {len(all_papers)} domain-specific papers total\n")
-        else:
-            print("   No papers found across all searches\n")
 
         # Use column schemas extracted during bootstrap
         columns_summary = ""
@@ -801,7 +642,7 @@ Output ONLY the search query (2-5 words).
 - **Lead**: Ask questions, then synthesize proposals
 
 ## Task:
-Team members: Propose what to implement (2-3 sentences), citing YOUR field's research.
+Team members: Propose what to implement based on your expertise (2-3 sentences).
 Lead: Ask 1-2 questions, then synthesize proposals.
 """
 
@@ -810,8 +651,6 @@ Lead: Ask 1-2 questions, then synthesize proposals.
         print(f"   Dataframes: {list(self.executor.data_context.keys())}")
         if history_context:
             print(f"   Previous metrics: {last['metrics']}")
-        if all_papers:
-            print(f"   Research papers available: {len(all_papers)}")
         print()
 
         meeting = TeamMeeting(save_dir=str(self.results_dir / 'meetings'))
@@ -822,16 +661,8 @@ Lead: Ask 1-2 questions, then synthesize proposals.
             num_rounds=1  # Reduced from 2 to 1 for speed
         )
 
-        # Check if team members actually cited their papers
-        print("\n📊 PAPER CITATION CHECK:")
-        for agent in self.team_members:
-            if agent.knowledge_base.papers:
-                print(f"\n{agent.title} has {len(agent.knowledge_base.papers)} papers in knowledge base:")
-                for paper in agent.knowledge_base.papers[:3]:
-                    cited = paper.title[:30] in summary or paper.authors[0] in summary if paper.authors else False
-                    status = "✅ CITED" if cited else "❌ NOT CITED"
-                    print(f"  {status}: {paper.title[:60]}... ({paper.year})")
-        print()
+        # Save meeting transcript
+        meeting.save(f'iteration_{self.iteration:02d}_team_meeting.json')
 
         return summary
 
@@ -922,6 +753,7 @@ Implement the team's plan.
 - Write complete, executable code
 - Import what you need, define variables
 - Use the EXACT column names from DataFrame Schemas above
+- If training/evaluating a model, compute MAE and store it in a variable (e.g., mae = ...)
 
 Output ONLY Python code in ```python blocks.
 """
@@ -932,6 +764,9 @@ Output ONLY Python code in ```python blocks.
             task=task,
             num_iterations=1
         )
+
+        # Save coding meeting transcript
+        meeting.save(f'iteration_{self.iteration:02d}_coding.json')
 
         # Extract code from output
         code = extract_code_from_text(code_output)
