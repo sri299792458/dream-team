@@ -272,6 +272,11 @@ Output ONLY the Python code, wrapped in ```python code blocks.
 
         code = extract_code_from_text(code_output)
 
+        # Save exploration code
+        code_file = self.results_dir / 'code' / 'iteration_00.py'
+        code_file.parent.mkdir(exist_ok=True)
+        code_file.write_text(code)
+
         # Execute exploration with retry on failure
         print("⚙️  Executing exploration...\n")
         results = self._execute_with_retry(
