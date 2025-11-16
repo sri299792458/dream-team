@@ -500,41 +500,58 @@ Only output the agent specifications, nothing else.
             approach_preview = approach[:200] + "..." if len(approach) > 200 else approach
             history_context = f"\n## Previous Iteration:\nApproach: {approach_preview}\nMetrics: {last['metrics']}{output_preview}\n"
 
-        # Search for relevant research to inform the discussion
+        # Each domain expert searches for papers in their field
         research_context = ""
-        print("📚 Team searching for relevant research...\n")
-        try:
-            # Extract search query from current context
-            query_prompt = f"""
-Extract 2-3 key academic search terms for finding relevant research.
+        print("📚 Team members searching for research in their domains...\n")
 
-Problem: {problem_statement[:300]}
-{history_context}
+        all_papers = []
+        for agent in self.team_members:
+            try:
+                # Generate search query based on agent's expertise domain
+                # Focus on their DOMAIN (nutrition, psychology, etc.) not ML techniques
+                query_prompt = f"""
+Generate an academic search query for papers in this expert's domain.
 
-What research topics would help improve the approach?
-Output ONLY the search query (2-5 words, academic terminology).
+Expert: {agent.title}
+Expertise: {agent.expertise}
+Problem context: {problem_statement[:200]}
+
+Generate a search query (2-5 words) to find papers from this expert's academic field.
+Focus on the DOMAIN (nutrition, psychology, food science, etc.), NOT machine learning.
+
+Output ONLY the search query.
 """
-            search_query = self.llm.generate(query_prompt, temperature=0.3).strip().strip('"\'')
-            print(f"   Search query: '{search_query}'")
+                search_query = self.llm.generate(query_prompt, temperature=0.3).strip().strip('"\'')
+                print(f"   {agent.title} searching: '{search_query}'")
 
-            papers = self.research.research_topic(
-                query=search_query,
-                context=f"Problem context and looking for methods to improve",
-                num_papers=3  # Get a few relevant papers
-            )
+                papers = self.research.research_topic(
+                    query=search_query,
+                    context=f"{agent.expertise} - looking for relevant domain knowledge",
+                    num_papers=2  # 2 papers per expert
+                )
 
-            if papers:
-                research_context = "\n## Recent Research (for your reference):\n"
-                for i, paper in enumerate(papers, 1):
-                    research_context += f"{i}. **{paper.title}** ({', '.join(paper.authors[:2])} et al., {paper.year})\n"
-                    research_context += f"   - {paper.abstract[:200]}...\n"
-                research_context += "\n"
-                print(f"   Found {len(papers)} relevant papers\n")
-            else:
-                print("   No papers found (search may have failed)\n")
+                if papers:
+                    # Add papers to agent's knowledge base
+                    for paper in papers:
+                        agent.knowledge_base.add_paper(paper)
+                    all_papers.extend([(agent.title, paper) for paper in papers])
+                    print(f"      Found {len(papers)} papers\n")
+                else:
+                    print(f"      No papers found\n")
 
-        except Exception as e:
-            print(f"   Note: Research search skipped: {e}\n")
+            except Exception as e:
+                print(f"      Error: {e}\n")
+
+        # Build research context showing which expert found which papers
+        if all_papers:
+            research_context = "\n## Domain Research (searched by team members):\n"
+            for agent_title, paper in all_papers:
+                research_context += f"\n**[{agent_title}]** {paper.title} ({', '.join(paper.authors[:2])} et al., {paper.year})\n"
+                research_context += f"   {paper.abstract[:200]}...\n"
+            research_context += "\n"
+            print(f"✅ Team found {len(all_papers)} domain-specific papers total\n")
+        else:
+            print("   No papers found across all searches\n")
 
         agenda = f"""
 **BE CONCISE.** Decide what to implement this iteration.
@@ -550,15 +567,16 @@ Output ONLY the search query (2-5 words, academic terminology).
 
 ## Your Role:
 You are world-class experts in your fields. When suggesting approaches:
-- Review the research above and cite specific papers when relevant
-- Ground your recommendations in established methods from the literature
-- Leverage your deep expertise to propose evidence-based solutions
-- You can reference papers by author/year (e.g., "As shown in Smith et al. 2023...")
+- **Domain Experts**: Reference the domain research YOU searched (shown with your name above)
+  - Apply insights from your field's literature to inform the approach
+  - Cite specific papers that support your recommendations (e.g., "Based on Smith et al. 2023...")
+- **Lead**: Synthesize domain expertise with practical ML implementation
+- Ground ALL recommendations in research evidence, not just intuition
 
 ## Your Task:
 In 2-3 sentences, describe what needs to be implemented this iteration.
 Focus on WHAT to do, not HOW to code it.
-Ground your suggestions in research and cite specific papers when relevant.
+Domain experts: cite your field's research. Lead: coordinate the plan.
 
 A coding agent will receive your discussion and implement it.
 
