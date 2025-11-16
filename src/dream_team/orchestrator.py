@@ -278,11 +278,19 @@ Output ONLY the Python code, wrapped in ```python code blocks.
         research_summary = ""
         print("📚 Searching research literature to inform team composition...\n")
         try:
-            # Extract clean search query from problem statement
-            # Use first line or sentence, remove newlines
-            search_query = problem_statement.strip().split('\n')[0].strip()
-            if len(search_query) > 100:
-                search_query = search_query[:100]
+            # Use LLM to extract academic search terms from problem statement
+            query_extraction_prompt = f"""
+Extract 2-3 key academic search terms from this problem statement for searching research papers.
+
+Problem: {problem_statement[:300]}
+
+Output ONLY the search query (2-5 words, academic terminology, no quotes).
+Examples: "shelf life prediction", "time series forecasting", "image classification deep learning"
+"""
+            search_query = self.llm.generate(query_extraction_prompt, temperature=0.3).strip()
+            # Clean up - remove quotes if LLM added them
+            search_query = search_query.strip('"\'')
+            print(f"   Search query: '{search_query}'")
 
             papers = self.research.research_topic(
                 query=search_query,
@@ -782,15 +790,23 @@ Output ONLY the FIXED Python code, wrapped in ```python code blocks.
         print("📚 Researching latest approaches...\n")
         papers_summary = ""
         try:
-            # Extract clean search query from problem statement
-            search_query = problem_statement.strip().split('\n')[0].strip()
-            if len(search_query) > 100:
-                search_query = search_query[:100]
+            # Use LLM to extract academic search terms
+            query_extraction_prompt = f"""
+Extract 2-3 key academic search terms from this problem for searching research papers.
+
+Problem: {problem_statement[:300]}
+
+Output ONLY the search query (2-5 words, academic terminology, no quotes).
+Examples: "shelf life prediction", "gradient boosting regression", "deep learning forecasting"
+"""
+            search_query = self.llm.generate(query_extraction_prompt, temperature=0.3).strip()
+            search_query = search_query.strip('"\'')
+            print(f"   Search query: '{search_query}'")
 
             papers = self.research.research_topic(
                 query=search_query,
                 context=f"Current performance: {current_metrics}. Looking for new approaches.",
-                num_papers=3  # Reduced to avoid rate limiting
+                num_papers=2  # Reduced to avoid rate limiting
             )
 
             if papers:
