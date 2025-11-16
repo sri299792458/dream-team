@@ -302,7 +302,7 @@ Keep it focused (1-2 paragraphs).
         return '\n'.join(formatted)
 
     def _search_and_observe(self, agent, search_query: str) -> str:
-        """Search papers and return observation summary"""
+        """Search papers and return observation summary with key insights"""
         try:
             # Limit query length
             if len(search_query) > 50:
@@ -321,11 +321,32 @@ Keep it focused (1-2 paragraphs).
             # Get existing papers
             existing_titles = [p.title for p in agent.knowledge_base.papers]
 
-            # Add new papers and build observation
+            # Add new papers with analysis
             papers_found = []
             for result in raw_results[:2]:
                 if result.title not in existing_titles:
                     paper = result.to_paper()
+
+                    # Analyze paper to extract key insights
+                    # Fast analysis for iteration speed
+                    analysis_prompt = f"""Extract 2-3 key actionable insights from this paper abstract.
+
+Title: {paper.title}
+Abstract: {paper.abstract}
+
+Output ONLY a JSON array of 2-3 brief insights:
+["insight 1", "insight 2", "insight 3"]
+
+Focus on methods, findings, or techniques that could be applied."""
+
+                    try:
+                        insights = self.llm.generate_json(analysis_prompt, temperature=0.3)
+                        if isinstance(insights, list):
+                            paper.key_findings = insights[:3]
+                    except Exception:
+                        # Fallback: use first sentence of abstract
+                        paper.key_findings = [paper.abstract.split('.')[0] + '.'] if paper.abstract else []
+
                     agent.knowledge_base.add_paper(paper)
                     papers_found.append(paper)
                     print(f"         ✓ {paper.title[:60]}... ({paper.year})")
@@ -333,14 +354,16 @@ Keep it focused (1-2 paragraphs).
             if not papers_found:
                 return "Papers already in knowledge base."
 
-            # Build observation summary
-            observation = f"Found {len(papers_found)} relevant papers: "
+            # Build observation summary with insights
+            observation = f"Found {len(papers_found)} relevant papers:\n"
             observations = []
             for paper in papers_found:
-                obs = f"{paper.title[:50]}... ({', '.join(paper.authors[:2])} et al., {paper.year})"
+                obs = f"- {paper.title[:60]}... ({', '.join(paper.authors[:2])} et al., {paper.year})"
+                if paper.key_findings:
+                    obs += f"\n  Key insights: {'; '.join(paper.key_findings[:2])}"
                 observations.append(obs)
 
-            observation += '; '.join(observations)
+            observation += '\n'.join(observations)
             return observation
 
         except Exception as e:
