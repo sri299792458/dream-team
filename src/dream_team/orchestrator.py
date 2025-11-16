@@ -651,12 +651,16 @@ Output ONLY the search query (2-5 words).
                             limit=20
                         )
 
-                        # Sort by citation count to get seminal works
-                        raw_results.sort(key=lambda p: p.citation_count, reverse=True)
-                        papers_to_analyze = [p for p in raw_results[:5] if p.paper_id not in existing_paper_ids][:2]
+                        if raw_results:
+                            # Sort by citation count to get seminal works
+                            raw_results.sort(key=lambda p: p.citation_count, reverse=True)
+                            papers_to_analyze = [p for p in raw_results[:5] if p.paper_id not in existing_paper_ids][:2]
 
-                        papers = [p.to_paper() for p in papers_to_analyze]
-                        print(f"      Found {len(papers)} seminal papers from references")
+                            papers = [p.to_paper() for p in papers_to_analyze]
+                            print(f"      Found {len(papers)} seminal papers from references")
+                        else:
+                            papers = []
+                            print(f"      No references found (API error or empty)")
                     else:
                         papers = []
                         print(f"      No paper ID available for backward search")
