@@ -2,6 +2,7 @@
 Experiment orchestration for autonomous Dream Team operation.
 
 Coordinates agents, code execution, and iterative improvement.
+Uses mathematical framework for emergent evolution.
 """
 
 from typing import List, Dict, Any, Optional
@@ -15,6 +16,8 @@ from .meetings import TeamMeeting, IndividualMeeting
 from .evolution import EvolutionEngine, EvolutionTrigger
 from .research import get_research_assistant
 from .utils import save_json, load_json
+from .knowledge_state import KnowledgeGraph, extract_concepts_from_text
+from .team import Team
 
 
 class ExperimentOrchestrator:
@@ -58,6 +61,11 @@ class ExperimentOrchestrator:
         self.best_metric = None
         self.bootstrap_completed = len(team_members) > 0  # Skip bootstrap if team already exists
         self.column_schemas = {}  # Will be populated during bootstrap
+
+        # Mathematical framework (NEW)
+        self.problem_graph = None  # KnowledgeGraph extracted from problem
+        self.team = None  # Team object for collective dynamics
+        self.use_mathematical_evolution = True  # Toggle for mathematical vs hardcoded evolution
 
     def run(
         self,
@@ -124,6 +132,10 @@ class ExperimentOrchestrator:
             self._bootstrap_exploration(problem_statement)
             self.bootstrap_completed = True
             print("\n" + "="*60)
+
+        # Initialize mathematical framework
+        if self.use_mathematical_evolution:
+            self._initialize_mathematical_framework(problem_statement, target_metric)
             print("Bootstrap complete. Starting team iterations...\n")
 
         # Main iteration loop
@@ -192,8 +204,11 @@ class ExperimentOrchestrator:
                 print(f"\n🎯 Target achieved! {target_metric}: {metrics.get(target_metric)}")
                 break
 
-            # Step 7: Check if evolution needed
-            should_evolve = self._check_evolution_triggers(metrics, target_metric, minimize_metric)
+            # Step 7: Update dynamics and check if evolution needed
+            if self.use_mathematical_evolution:
+                should_evolve = self._check_mathematical_evolution(metrics, target_metric, minimize_metric)
+            else:
+                should_evolve = self._check_evolution_triggers(metrics, target_metric, minimize_metric)
 
             if should_evolve:
                 self._evolve_team(problem_statement, metrics)
@@ -1368,3 +1383,142 @@ Be strategic - only make changes that address the current challenge.
             'iteration_history': self.experiment_history,
             'execution_summary': self.executor.summary()
         }
+
+    # ========== Mathematical Evolution Methods ==========
+
+    def _initialize_mathematical_framework(self, problem_statement: str, target_metric: str):
+        """Initialize problem graph and team for mathematical evolution"""
+        print("\n🧮 Initializing mathematical framework...")
+
+        # Extract problem as knowledge graph
+        self.problem_graph = self._extract_problem_graph(problem_statement, target_metric)
+        print(f"   ✓ Problem graph: {len(self.problem_graph.concepts)} concepts")
+
+        # Create team object
+        self.team = Team(self.all_agents)
+        print(f"   ✓ Team initialized: {len(self.team.agents)} agents")
+
+        # Show initial team state
+        diversity = self.team.compute_diversity()
+        print(f"   ✓ Team diversity: {diversity:.3f}")
+        print()
+
+    def _extract_problem_graph(self, problem_statement: str, target_metric: str) -> KnowledgeGraph:
+        """Extract problem as knowledge graph"""
+        # Combine problem statement with target metric for better concept extraction
+        problem_text = f"{problem_statement} Target metric: {target_metric}"
+
+        # Extract concepts
+        concepts = extract_concepts_from_text(problem_text, use_llm=False)
+
+        # Create knowledge graph
+        graph = KnowledgeGraph()
+
+        # Add domain-specific important concepts
+        important_concepts = {
+            'regression', 'classification', 'prediction', 'forecasting',
+            'optimization', 'machine_learning', 'deep_learning',
+            'gradient_boosting', 'neural_network', 'feature_engineering',
+            target_metric.lower().replace('_', ' ')
+        }
+
+        # Combine extracted + important
+        all_concepts = concepts | important_concepts
+
+        # Add concepts with importance
+        for concept in all_concepts:
+            # Higher importance for concepts in problem statement
+            if concept.lower() in problem_statement.lower():
+                importance = 2.0
+            elif concept == target_metric.lower().replace('_', ' '):
+                importance = 3.0  # Metric is very important
+            else:
+                importance = 1.0
+
+            graph.add_concept(concept, importance=importance)
+
+        return graph
+
+    def _check_mathematical_evolution(
+        self,
+        metrics: Dict[str, float],
+        target_metric: str,
+        minimize: bool
+    ) -> bool:
+        """Check if evolution needed using mathematical framework"""
+        if len(self.experiment_history) < 3:
+            return False  # Need history
+
+        # Build metric history
+        metric_history = [
+            h['metrics'].get(target_metric, float('inf') if minimize else float('-inf'))
+            for h in self.experiment_history
+        ]
+
+        # Update agent dynamics based on iteration results
+        self._update_agent_dynamics(metric_history, minimize)
+
+        # Get team state diagnosis
+        state = self.team.diagnose_state(metric_history, minimize=minimize)
+        print(f"\n📊 Team state: {state}")
+
+        # Get diversity
+        diversity = self.team.compute_diversity()
+        print(f"   Team diversity: {diversity:.3f}")
+
+        # Check each agent for evolution signals
+        evolution_signals = []
+        for agent in self.all_agents:
+            should_evolve, evo_type = agent.should_evolve(self.problem_graph, self.team)
+            if should_evolve:
+                evolution_signals.append((agent, evo_type))
+                gini = agent.δ.gini_coefficient()
+                effectiveness = agent.contribution_effectiveness()
+                print(f"   🔔 {agent.title}: {evo_type} (gini={gini:.2f}, eff={effectiveness:.2f})")
+
+        # Evolution triggered if any agent needs it OR team diagnosed need
+        if evolution_signals:
+            print(f"\n🔔 Mathematical evolution triggered:")
+            for agent, evo_type in evolution_signals:
+                print(f"   - {agent.title}: {evo_type}")
+            return True
+
+        if state in ["REFRAMING", "EXPLORATION"]:
+            print(f"   - Team needs {state}")
+            return True
+
+        return False
+
+    def _update_agent_dynamics(self, metric_history: List[float], minimize: bool):
+        """Update agent mathematical state based on iteration results"""
+        if len(metric_history) < 2:
+            return
+
+        # Compute learning quality for each concept
+        # Simple heuristic: if metrics improved, quality is high
+        recent_improvement = metric_history[-2] - metric_history[-1] if minimize else metric_history[-1] - metric_history[-2]
+
+        # Quality proportional to improvement
+        if recent_improvement > 0:
+            base_quality = 0.8  # Good iteration
+        elif abs(recent_improvement) < 0.01:
+            base_quality = 0.5  # Plateau
+        else:
+            base_quality = 0.3  # Regression
+
+        # All concepts get similar quality (could be more sophisticated)
+        learning_quality = {
+            concept: base_quality
+            for concept in self.problem_graph.concepts
+        }
+
+        # Update all agents' dynamics
+        self.team.update_all_dynamics(
+            problem=self.problem_graph,
+            learning_quality=learning_quality,
+            dt=0.1
+        )
+
+        # Log team state
+        team_state = self.team.get_state_summary()
+        print(f"\n   📈 Mathematical state updated (diversity: {team_state['diversity']:.3f})")
