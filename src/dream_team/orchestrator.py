@@ -828,8 +828,8 @@ Output ONLY Python code in ```python blocks.
             last = self.experiment_history[-1]
             if last['results'].get('output'):
                 output = last['results']['output']
-                if len(output) > 2000:
-                    previous_output_context = f"\n## Previous Iteration Output (last 2000 chars):\n```\n...{output[-2000:]}\n```\n"
+                if len(output) > 15000:
+                    previous_output_context = f"\n## Previous Iteration Output (last 15000 chars):\n```\n...{output[-15000:]}\n```\n"
                 else:
                     previous_output_context = f"\n## Previous Iteration Output:\n```\n{output}\n```\n"
 
