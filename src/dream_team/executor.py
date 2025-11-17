@@ -13,6 +13,7 @@ import importlib
 from typing import Dict, Any, Optional, Tuple
 import pandas as pd
 import numpy as np
+import torch
 from pathlib import Path
 
 
@@ -70,6 +71,7 @@ class CodeExecutor:
         exec_namespace = {
             'pd': pd,
             'np': np,
+            'torch': torch,
             'Path': Path,
             '__builtins__': __builtins__,
         }

@@ -275,7 +275,7 @@ The PI wants to do initial exploration. Write Python code to implement this:
 {problem_statement}
 
 ## Available in execution context:
-- Pre-imported libraries: pandas (pd), numpy (np), pathlib.Path
+- Pre-imported libraries: pandas (pd), numpy (np), torch, pathlib.Path
 - Variables: {list(self.executor.data_context.keys())}
   (You can use any of these variables directly in your code)
 
@@ -682,12 +682,17 @@ Implement the team's plan.
 {list(self.executor.data_context.keys())}
 {schema_info}
 {previous_output_context}
+## Available in execution context:
+- Pre-imported libraries: pandas (pd), numpy (np), torch
+
 ## Requirements:
 - Use GPU when training models
 - Write complete, executable code
 - Import what you need, define variables
 - Use the EXACT column names from DataFrame Schemas above
 - If training/evaluating a model, compute MAE and store it in a variable (e.g., mae = ...)
+- Print important outputs: metrics, feature importance, model summaries
+- Save trained models (e.g., joblib.dump, torch.save) so they can be reused if training took long
 - Suppress verbose output: `warnings.filterwarnings('ignore')`, use `verbose=0` or `verbose=-1` in models
 
 Output ONLY Python code in ```python blocks.
@@ -854,7 +859,7 @@ Your code failed with an error. Fix it.
 {traceback}
 
 ## Available in execution context:
-- Pre-imported libraries: pandas, numpy, pathlib
+- Pre-imported libraries: pandas, numpy, torch, pathlib
 - Variables: {list(self.executor.data_context.keys())}
   Note: Missing packages are auto-installed, so if you see ModuleNotFoundError, just wait - it will retry automatically
 
