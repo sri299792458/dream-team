@@ -114,6 +114,10 @@ class ExperimentOrchestrator:
         # Store problem statement for use in prompts
         self.problem_statement = problem_statement
 
+        # Store target metric and minimize flag for use throughout run
+        self._target_metric = target_metric
+        self._minimize_metric = minimize_metric
+
         # Check for resume
         start_iteration = 1
         if resume:
@@ -503,6 +507,7 @@ Only output the agent specifications, nothing else.
 
         # Get current context
         history_context = ""
+        performance_analysis = ""
         if self.experiment_history:
             last = self.experiment_history[-1]
 
@@ -526,7 +531,25 @@ Only output the agent specifications, nothing else.
             # Extract approach preview to avoid slicing syntax issues in f-string
             approach = last['approach']
             approach_preview = approach[:200] + "..." if len(approach) > 200 else approach
-            history_context = f"\n## Previous Iteration Results:\nApproach tried: {approach_preview}\nMetrics achieved: {last['metrics']}\n(Note: These are PREVIOUS iteration metrics, not current){output_preview}\n"
+
+            # Analyze performance compared to best so far
+            if self.best_metric is not None and last['metrics'] and hasattr(self, '_minimize_metric'):
+                last_metric_value = last['metrics'].get(self._target_metric)
+                if last_metric_value is not None:
+                    if self._minimize_metric:
+                        if last_metric_value > self.best_metric:
+                            degradation = last_metric_value - self.best_metric
+                            performance_analysis = f"\n⚠️  **PERFORMANCE DEGRADED**: Last iteration's {self._target_metric} ({last_metric_value:.4f}) is WORSE than best ({self.best_metric:.4f}) by {degradation:.4f}.\n**The previous approach made things worse. Consider reverting or trying a completely different direction.**\n"
+                        elif last_metric_value == self.best_metric:
+                            performance_analysis = f"\n✅ Last iteration maintained best performance: {self._target_metric} = {self.best_metric:.4f}\n"
+                    else:
+                        if last_metric_value < self.best_metric:
+                            degradation = self.best_metric - last_metric_value
+                            performance_analysis = f"\n⚠️  **PERFORMANCE DEGRADED**: Last iteration's {self._target_metric} ({last_metric_value:.4f}) is WORSE than best ({self.best_metric:.4f}) by {degradation:.4f}.\n**The previous approach made things worse. Consider reverting or trying a completely different direction.**\n"
+                        elif last_metric_value == self.best_metric:
+                            performance_analysis = f"\n✅ Last iteration maintained best performance: {self._target_metric} = {self.best_metric:.4f}\n"
+
+            history_context = f"\n## Previous Iteration Results:\nApproach tried: {approach_preview}\nMetrics achieved: {last['metrics']}\n{performance_analysis}(Note: These are PREVIOUS iteration metrics, not current){output_preview}\n"
 
         # Research context removed - agents now use ReAct loop during meetings
         # They search papers iteratively as they reason about proposals
@@ -569,6 +592,9 @@ Lead: Synthesize the team's analysis and proposals into a decisive action plan.
         if history_context:
             print(f"   Previous iteration: {last.get('iteration', 0)}")
             print(f"   Previous metrics: {last['metrics']}")
+            # Display performance analysis prominently
+            if performance_analysis:
+                print(f"{performance_analysis.strip()}")
             print(f"   Previous approach: {last['approach'][:100]}...")
             # Show what output context is being passed
             if last['results'].get('output'):
