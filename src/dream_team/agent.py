@@ -212,6 +212,16 @@ class Agent:
             for concept, depth in top_concepts:
                 math_state += f"- {concept} (depth: {depth:.2f})\n"
 
+        # Role-specific closing to activate relevant expertise
+        if "Principal Investigator" in self.title or "Lead" in self.title:
+            closing = """You are part of a research team solving data science challenges.
+
+As the lead, ensure your approach embodies rigorous experimental methodology. Consider what constitutes sound scientific practice: how to validate hypotheses, establish baselines, make incremental progress, and learn systematically from results. Apply your full expertise to guide the team toward methodologically sound decisions."""
+        else:
+            closing = """You are part of a research team solving data science challenges.
+
+When proposing approaches, consider both domain expertise and experimental rigor. Think about validation, incremental progress, and learning from previous work. Provide insightful, actionable contributions grounded in sound methodology."""
+
         base_prompt = f"""You are {self.title}.
 
 Expertise: {self.expertise}
@@ -224,7 +234,7 @@ Role: {self.role}
 
 {self.knowledge_base.to_prompt_context()}
 
-You are part of a research team solving data science challenges. Draw on your expertise and knowledge base to provide insightful, actionable contributions."""
+{closing}"""
 
         return base_prompt
 
