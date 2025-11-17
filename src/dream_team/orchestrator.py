@@ -583,6 +583,17 @@ Lead: Synthesize the team's analysis and proposals into a decisive action plan.
         print("\n📋 TEAM MEETING CONTEXT:")
         print(f"   Dataframes: {list(self.executor.data_context.keys())}")
         if history_context:
+            # Show iteration history
+            if len(self.experiment_history) > 1:
+                print(f"\n   📊 Iteration History:")
+                recent_iters = [h for h in self.experiment_history if h.get('iteration', -1) > 0][-3:]
+                for hist in recent_iters:
+                    iter_num = hist.get('iteration', '?')
+                    iter_metrics = hist.get('metrics', {})
+                    print(f"      - Iteration {iter_num}: {iter_metrics}")
+                if self.best_metric is not None:
+                    print(f"      → Best metric so far: {self.best_metric}")
+                print()
             print(f"   Previous iteration: {last.get('iteration', 0)}")
             print(f"   Previous metrics: {last['metrics']}")
             print(f"   Previous approach: {last['approach'][:100]}...")
