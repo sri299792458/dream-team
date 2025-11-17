@@ -218,6 +218,9 @@ As the team lead, open the meeting by:
 2. Asking key questions for the team to address
 3. Setting expectations for the discussion
 
+IMPORTANT: This is ONLY the opening. Do NOT generate team member proposals or synthesis.
+Your team members will speak next after you finish opening.
+
 Keep it concise (2-3 paragraphs).
 """
 
