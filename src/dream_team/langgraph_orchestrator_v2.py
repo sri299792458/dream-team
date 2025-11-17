@@ -15,6 +15,7 @@ from pathlib import Path
 
 from langgraph.graph import StateGraph, END
 from langgraph.checkpoint.memory import MemorySaver
+from langgraph.checkpoint.sqlite import SqliteSaver
 from langchain_core.messages import HumanMessage
 
 from .langgraph_state import (
@@ -642,7 +643,7 @@ def _extract_metrics(result: Dict, target_metric: str) -> Dict[str, Any]:
 # GRAPH BUILDER V2
 # ============================================================================
 
-def create_dream_team_graph_v2(checkpointer=None):
+def create_dream_team_graph_v2(checkpoint_path: Optional[Path] = None):
     """
     Create enhanced Dream Team LangGraph.
 
@@ -652,6 +653,10 @@ def create_dream_team_graph_v2(checkpointer=None):
     - Multi-agent team meetings
     - Mathematical state integration
     - Better error handling
+    - Persistent checkpoints with SqliteSaver
+
+    Args:
+        checkpoint_path: Path to checkpoint database (None uses MemorySaver for testing)
 
     Returns:
         Compiled graph
@@ -689,8 +694,14 @@ def create_dream_team_graph_v2(checkpointer=None):
     graph.add_edge("evolution", "increment_iteration")
     graph.add_edge("increment_iteration", "team_planning")
 
-    # Compile
-    if checkpointer is None:
+    # Compile with appropriate checkpointer
+    if checkpoint_path is None:
+        # Use MemorySaver for testing/debugging
         checkpointer = MemorySaver()
+        print("⚠️  Using MemorySaver - checkpoints will be lost on exit")
+    else:
+        # Use SqliteSaver for persistent checkpoints
+        checkpointer = SqliteSaver.from_conn_string(str(checkpoint_path))
+        print(f"✅ Using SqliteSaver - checkpoints saved to {checkpoint_path}")
 
     return graph.compile(checkpointer=checkpointer)
