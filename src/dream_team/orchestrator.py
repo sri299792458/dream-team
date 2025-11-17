@@ -691,11 +691,6 @@ Implement the team's plan.
   - For LightGBM: use `verbose=-1` parameter
   - For XGBoost: use `verbosity=0` parameter
   - Suppress training iteration logs - only show final metrics
-- **Write FOCUSED code**:
-  - Implement what the team asked for - don't add defensive boilerplate
-  - Minimal comments - let code speak for itself
-  - Don't add unnecessary column alignment or missing value handling unless asked
-  - Don't write template-like code - write smart, specific implementations
 
 Output ONLY Python code in ```python blocks.
 """
