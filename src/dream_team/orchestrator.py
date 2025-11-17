@@ -289,15 +289,15 @@ Output ONLY the Python code, wrapped in ```python code blocks.
 """
 
         code_meeting = IndividualMeeting(
-            save_dir=str(self.results_dir / 'meetings'),
-            research_api=self.research.ss_api if hasattr(self, 'research') else None
+            save_dir=str(self.results_dir / 'meetings')
         )
         code_output = code_meeting.run(
             agent=self.coding_agent,
             task=code_task,
-            num_iterations=1,
-            use_react=True  # Coding agent uses ReAct to search for implementation examples
+            num_iterations=1
+            # Coding agent writes code based on expertise, no paper search needed
         )
+
 
         code = extract_code_from_text(code_output)
 
@@ -682,14 +682,13 @@ Output ONLY Python code in ```python blocks.
 """
 
         meeting = IndividualMeeting(
-            save_dir=str(self.results_dir / 'meetings'),
-            research_api=self.research.ss_api if hasattr(self, 'research') else None
+            save_dir=str(self.results_dir / 'meetings')
         )
         code_output = meeting.run(
             agent=self.coding_agent,
             task=task,
-            num_iterations=1,
-            use_react=True  # Coding agent uses ReAct to search for implementation examples
+            num_iterations=1
+            # Coding agent writes code based on expertise, no paper search needed
         )
 
         # Save coding meeting transcript
