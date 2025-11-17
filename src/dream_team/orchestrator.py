@@ -62,10 +62,9 @@ class ExperimentOrchestrator:
         self.bootstrap_completed = len(team_members) > 0  # Skip bootstrap if team already exists
         self.column_schemas = {}  # Will be populated during bootstrap
 
-        # Mathematical framework (NEW)
+        # Mathematical framework for emergent evolution
         self.problem_graph = None  # KnowledgeGraph extracted from problem
         self.team = None  # Team object for collective dynamics
-        self.use_mathematical_evolution = True  # Toggle for mathematical vs hardcoded evolution
 
     def run(
         self,
@@ -134,9 +133,8 @@ class ExperimentOrchestrator:
             print("\n" + "="*60)
 
         # Initialize mathematical framework
-        if self.use_mathematical_evolution:
-            self._initialize_mathematical_framework(problem_statement, target_metric)
-            print("Bootstrap complete. Starting team iterations...\n")
+        self._initialize_mathematical_framework(problem_statement, target_metric)
+        print("Bootstrap complete. Starting team iterations...\n")
 
         # Main iteration loop
         for self.iteration in range(start_iteration, max_iterations + 1):
@@ -205,10 +203,7 @@ class ExperimentOrchestrator:
                 break
 
             # Step 7: Update dynamics and check if evolution needed
-            if self.use_mathematical_evolution:
-                should_evolve = self._check_mathematical_evolution(metrics, target_metric, minimize_metric)
-            else:
-                should_evolve = self._check_evolution_triggers(metrics, target_metric, minimize_metric)
+            should_evolve = self._check_mathematical_evolution(metrics, target_metric, minimize_metric)
 
             if should_evolve:
                 self._evolve_team(problem_statement, metrics)
@@ -293,11 +288,15 @@ The PI wants to do initial exploration. Write Python code to implement this:
 Output ONLY the Python code, wrapped in ```python code blocks.
 """
 
-        code_meeting = IndividualMeeting(save_dir=str(self.results_dir / 'meetings'))
+        code_meeting = IndividualMeeting(
+            save_dir=str(self.results_dir / 'meetings'),
+            research_api=self.research.ss_api if hasattr(self, 'research') else None
+        )
         code_output = code_meeting.run(
             agent=self.coding_agent,
             task=code_task,
-            num_iterations=1
+            num_iterations=1,
+            use_react=True  # Coding agent uses ReAct to search for implementation examples
         )
 
         code = extract_code_from_text(code_output)
@@ -682,11 +681,15 @@ Implement the team's plan.
 Output ONLY Python code in ```python blocks.
 """
 
-        meeting = IndividualMeeting(save_dir=str(self.results_dir / 'meetings'))
+        meeting = IndividualMeeting(
+            save_dir=str(self.results_dir / 'meetings'),
+            research_api=self.research.ss_api if hasattr(self, 'research') else None
+        )
         code_output = meeting.run(
             agent=self.coding_agent,
             task=task,
-            num_iterations=1
+            num_iterations=1,
+            use_react=True  # Coding agent uses ReAct to search for implementation examples
         )
 
         # Save coding meeting transcript
