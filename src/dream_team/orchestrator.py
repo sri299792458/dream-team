@@ -66,72 +66,6 @@ class ExperimentOrchestrator:
         self.problem_graph = None  # KnowledgeGraph extracted from problem
         self.team = None  # Team object for collective dynamics
 
-    def _extract_structured_output(self, output: str, success: bool, error: str = None) -> str:
-        """
-        Use LLM to intelligently extract useful information from code execution output.
-
-        Instead of hardcoded parsing or truncation, let the LLM identify what's
-        important: metrics, feature importance, errors, insights, etc.
-        """
-        if not success and error:
-            # For failures, use LLM to extract meaningful error info
-            error_sample = error[-2000:] if len(error) > 2000 else error
-            extraction_prompt = f"""Extract the KEY ERROR INFORMATION from this code execution failure.
-
-Error/traceback:
-```
-{error_sample}
-```
-
-Provide:
-1. What error occurred (error type and message)
-2. What caused it (which operation/line)
-3. Brief context
-
-Be concise (3-5 lines). Format as markdown.
-"""
-            try:
-                structured = self.llm.generate(extraction_prompt, temperature=0.3)
-                return "## Previous Iteration: FAILED\n\n" + structured
-            except:
-                # Fallback if LLM fails
-                return f"## Previous Iteration: FAILED\n\n```\n{error_sample}\n```"
-
-        if not success and not error:
-            return "## Previous Iteration: FAILED\n\n**No error message available**"
-
-        # For successful runs, use LLM to extract insights
-        # Take strategic sample: last 4000 chars (likely has final metrics)
-        output_sample = output[-4000:] if len(output) > 4000 else output
-
-        extraction_prompt = f"""Extract KEY INFORMATION from this code execution output for the next iteration.
-
-Output:
-```
-{output_sample}
-```
-
-Focus on what matters:
-- Final metrics (MAE, RMSE, accuracy, etc.)
-- Feature importance (top features if shown)
-- Key insights or patterns
-- Warnings/issues
-
-Ignore noise:
-- Verbose training logs (CV iterations, progress bars)
-- Redundant messages
-- Boilerplate
-
-Be concise (max 10 lines). Use markdown formatting.
-"""
-
-        try:
-            structured = self.llm.generate(extraction_prompt, temperature=0.3)
-            return "## Previous Iteration Output:\n\n" + structured
-        except:
-            # Fallback if LLM fails - show last 800 chars
-            return f"## Previous Iteration Output:\n\n```\n{output[-800:]}\n```"
-
     def run(
         self,
         problem_statement: str,
@@ -572,22 +506,22 @@ Only output the agent specifications, nothing else.
         if self.experiment_history:
             last = self.experiment_history[-1]
 
-            # Build history context with STRUCTURED output from previous iteration
+            # Build history context with output from previous iteration
             output_preview = ""
             if last['results'].get('output'):
                 output = last['results']['output']
-                success = last['results'].get('success', True)
-                error = last['results'].get('error', '')
-
                 # For bootstrap (iteration 0), show FIRST 3000 chars to include column info
+                # For other iterations, show LAST 8000 chars (more context than before)
                 if last.get('iteration', 0) == 0:
                     if len(output) > 3000:
                         output_preview = f"\n\nBootstrap Exploration Output (first 3000 chars):\n```\n{output[:3000]}...\n```"
                     else:
                         output_preview = f"\n\nBootstrap Exploration Output:\n```\n{output}\n```"
                 else:
-                    # For iterations 1+, use structured extraction
-                    output_preview = "\n\n" + self._extract_structured_output(output, success, error)
+                    if len(output) > 8000:
+                        output_preview = f"\n\nPrevious Iteration Output (last 8000 chars):\n```\n...{output[-8000:]}\n```"
+                    else:
+                        output_preview = f"\n\nPrevious Iteration Output:\n```\n{output}\n```"
 
             # Extract approach preview to avoid slicing syntax issues in f-string
             approach = last['approach']
@@ -714,18 +648,19 @@ Be concise. Focus only on column name issues.
             last = self.experiment_history[-1]
             if last['results'].get('output'):
                 output = last['results']['output']
-                success = last['results'].get('success', True)
-                error = last['results'].get('error', '')
 
                 # For bootstrap, show first 3000 chars (includes column schemas)
+                # For iterations, show last 8000 chars (more context)
                 if last.get('iteration', 0) == 0:
                     if len(output) > 3000:
                         previous_output_context = f"\n## Bootstrap Exploration Output (first 3000 chars):\n```\n{output[:3000]}...\n```\n"
                     else:
                         previous_output_context = f"\n## Bootstrap Exploration Output:\n```\n{output}\n```\n"
                 else:
-                    # For iterations 1+, use structured extraction
-                    previous_output_context = "\n" + self._extract_structured_output(output, success, error) + "\n"
+                    if len(output) > 8000:
+                        previous_output_context = f"\n## Previous Iteration Output (last 8000 chars):\n```\n...{output[-8000:]}\n```\n"
+                    else:
+                        previous_output_context = f"\n## Previous Iteration Output:\n```\n{output}\n```\n"
 
         # Build column schema info for coding agent
         schema_info = ""
