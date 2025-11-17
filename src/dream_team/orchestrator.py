@@ -511,15 +511,15 @@ Only output the agent specifications, nothing else.
             if last['results'].get('output'):
                 output = last['results']['output']
                 # For bootstrap (iteration 0), show FIRST 3000 chars to include column info
-                # For other iterations, show LAST 8000 chars (more context than before)
+                # For other iterations, show LAST 15000 chars (enough for team to review)
                 if last.get('iteration', 0) == 0:
                     if len(output) > 3000:
                         output_preview = f"\n\nBootstrap Exploration Output (first 3000 chars):\n```\n{output[:3000]}...\n```"
                     else:
                         output_preview = f"\n\nBootstrap Exploration Output:\n```\n{output}\n```"
                 else:
-                    if len(output) > 8000:
-                        output_preview = f"\n\nPrevious Iteration Output (last 8000 chars):\n```\n...{output[-8000:]}\n```"
+                    if len(output) > 15000:
+                        output_preview = f"\n\nPrevious Iteration Output (last 15000 chars):\n```\n...{output[-15000:]}\n```"
                     else:
                         output_preview = f"\n\nPrevious Iteration Output:\n```\n{output}\n```"
 
@@ -552,12 +552,15 @@ Only output the agent specifications, nothing else.
 {research_context}
 
 ## Roles:
-- **Team Members**: Propose features using ONLY the columns listed above (will use ReAct to search papers and ground proposals)
-- **Lead**: Synthesize team's proposals into clear decisions
+- **Team Members**: Review previous results, then propose what to do next (will use ReAct to search papers and ground proposals)
+- **Lead**: Synthesize team's analysis and proposals into clear decisions
 
 ## Task:
-Team members: Propose what to implement based on your expertise (2-3 sentences).
-Lead: Synthesize the team's proposals into a decisive action plan.
+Team members:
+1. First, review the previous iteration - what worked? what failed? what did you learn from the output?
+2. Then propose what to implement next based on your expertise and learnings (2-3 sentences). Use ONLY the columns listed above.
+
+Lead: Synthesize the team's analysis and proposals into a decisive action plan.
 """
 
         # Log agenda summary (not full text - too verbose)
@@ -650,15 +653,15 @@ Be concise. Focus only on column name issues.
                 output = last['results']['output']
 
                 # For bootstrap, show first 3000 chars (includes column schemas)
-                # For iterations, show last 8000 chars (more context)
+                # For iterations, show last 15000 chars (enough context)
                 if last.get('iteration', 0) == 0:
                     if len(output) > 3000:
                         previous_output_context = f"\n## Bootstrap Exploration Output (first 3000 chars):\n```\n{output[:3000]}...\n```\n"
                     else:
                         previous_output_context = f"\n## Bootstrap Exploration Output:\n```\n{output}\n```\n"
                 else:
-                    if len(output) > 8000:
-                        previous_output_context = f"\n## Previous Iteration Output (last 8000 chars):\n```\n...{output[-8000:]}\n```\n"
+                    if len(output) > 15000:
+                        previous_output_context = f"\n## Previous Iteration Output (last 15000 chars):\n```\n...{output[-15000:]}\n```\n"
                     else:
                         previous_output_context = f"\n## Previous Iteration Output:\n```\n{output}\n```\n"
 
