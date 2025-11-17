@@ -294,8 +294,8 @@ Output ONLY the Python code, wrapped in ```python code blocks.
         code_output = code_meeting.run(
             agent=self.coding_agent,
             task=code_task,
-            num_iterations=1
-            # Coding agent writes code based on expertise, no paper search needed
+            num_iterations=1,
+            use_react_coding=True  # Coding agent uses ReAct for iterative reasoning
         )
 
 
@@ -687,8 +687,8 @@ Output ONLY Python code in ```python blocks.
         code_output = meeting.run(
             agent=self.coding_agent,
             task=task,
-            num_iterations=1
-            # Coding agent writes code based on expertise, no paper search needed
+            num_iterations=1,
+            use_react_coding=True  # Coding agent uses ReAct for iterative reasoning
         )
 
         # Save coding meeting transcript

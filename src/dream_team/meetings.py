@@ -447,6 +447,109 @@ Output ONLY the search query (2-4 words).
 class IndividualMeeting(Meeting):
     """One-on-one meeting with critic"""
 
+    def _react_coding_task(self, agent, task: str, temperature: float, max_steps: int = 3) -> str:
+        """
+        ReAct loop for coding tasks: iterative reasoning to plan implementation.
+
+        Pattern:
+        1. Thought: Think about the approach/architecture
+        2. Thought: Refine the approach and consider edge cases
+        3. Thought: Finalize implementation details
+        4. Final Answer: Write the complete code
+
+        This is internal reasoning only - no external search.
+        Used for coding agent to think through implementation step-by-step.
+        """
+        print(f"   🧠 {agent.title} using ReAct reasoning...")
+
+        reasoning_steps = []
+
+        for step in range(max_steps):
+            # Build context from previous thoughts
+            previous_thoughts = ""
+            if reasoning_steps:
+                previous_thoughts = "\n\nPrevious reasoning:\n" + "\n".join([
+                    f"Step {i+1}: {thought}" for i, thought in enumerate(reasoning_steps)
+                ])
+
+            # Iterative thinking prompts
+            if step == 0:
+                thinking_prompt = f"""You are planning how to implement a coding task.
+
+Task: {task}
+
+Think step-by-step about the APPROACH:
+- What's the overall architecture/structure?
+- What are the main steps?
+- What libraries/methods will you use?
+
+Output only:
+Thought: [Your thinking about the overall approach]
+"""
+            elif step == 1:
+                thinking_prompt = f"""You are refining your implementation plan.
+
+Task: {task}
+{previous_thoughts}
+
+Think step-by-step about IMPLEMENTATION DETAILS:
+- What edge cases need handling?
+- What's the data flow?
+- What features/transformations are needed?
+
+Output only:
+Thought: [Your thinking about implementation details]
+"""
+            else:
+                thinking_prompt = f"""You are finalizing your implementation plan.
+
+Task: {task}
+{previous_thoughts}
+
+Think step-by-step about FINAL DETAILS:
+- Are there any missing pieces?
+- How will you ensure correctness?
+- Any optimizations needed?
+
+Output only:
+Thought: [Your final thoughts before coding]
+"""
+
+            thought = self.llm.generate(
+                thinking_prompt,
+                system_instruction=agent.prompt,
+                temperature=temperature * 0.7
+            ).strip()
+
+            # Remove "Thought:" prefix if present
+            if thought.startswith('Thought:'):
+                thought = thought.replace('Thought:', '').strip()
+
+            print(f"      Step {step+1}: {thought[:100]}...")
+            reasoning_steps.append(thought)
+
+        # Final: Write code based on all reasoning
+        final_prompt = f"""You are implementing a coding task.
+
+Task: {task}
+
+Your reasoning process:
+{chr(10).join([f"Step {i+1}: {thought}" for i, thought in enumerate(reasoning_steps)])}
+
+Now write the COMPLETE, EXECUTABLE code based on your reasoning.
+Be thorough and handle all the details you thought through.
+
+Output ONLY the code in ```python blocks.
+"""
+
+        final_output = self.llm.generate(
+            final_prompt,
+            system_instruction=agent.prompt,
+            temperature=temperature * 0.9
+        )
+
+        return final_output
+
     def _react_individual_task(self, agent, task: str, temperature: float, max_steps: int = 2) -> str:
         """
         ReAct loop for individual task: agent reasons and searches papers before final output.
@@ -638,13 +741,15 @@ Focus on methods, findings, or techniques that could be applied."""
         critic_agent: Optional[Agent] = None,
         num_iterations: int = 2,
         temperature: float = 0.7,
-        use_react: bool = False
+        use_react: bool = False,
+        use_react_coding: bool = False
     ) -> str:
         """
         Run individual meeting with iterative refinement
 
         Args:
-            use_react: If True and research_api available, use ReAct pattern to search papers
+            use_react: If True and research_api available, use ReAct to search papers
+            use_react_coding: If True, use ReAct for coding (internal reasoning, no search)
 
         Returns: Final output
         """
@@ -653,13 +758,20 @@ Focus on methods, findings, or techniques that could be applied."""
         print(f"   Agent: {agent.title}")
         print(f"   Iterations: {num_iterations}")
         if use_react and self.research_api:
-            print(f"   Using ReAct: Yes")
+            print(f"   Using ReAct: Yes (with paper search)")
+        elif use_react_coding:
+            print(f"   Using ReAct: Yes (internal reasoning)")
         print()
 
-        # Initial work - use ReAct if requested and API available
-        if use_react and self.research_api:
+        # Initial work - choose ReAct type
+        if use_react_coding:
+            # Coding agent: iterative reasoning without external search
+            output = self._react_coding_task(agent, task, temperature)
+        elif use_react and self.research_api:
+            # Domain expert: ReAct with paper search
             output = self._react_individual_task(agent, task, temperature)
         else:
+            # Simple generation without ReAct
             work_prompt = f"""Task: {task}
 
 Complete this task drawing on your expertise and knowledge base.
