@@ -526,7 +526,26 @@ Only output the agent specifications, nothing else.
             # Extract approach preview to avoid slicing syntax issues in f-string
             approach = last['approach']
             approach_preview = approach[:200] + "..." if len(approach) > 200 else approach
-            history_context = f"\n## Previous Iteration Results:\nApproach tried: {approach_preview}\nMetrics achieved: {last['metrics']}\n(Note: These are PREVIOUS iteration metrics, not current){output_preview}\n"
+
+            # Build iteration history summary (last 3 iterations)
+            history_summary = ""
+            if len(self.experiment_history) > 1:  # More than just bootstrap
+                history_summary = "\n## Iteration History:\n"
+                # Get last 3 non-bootstrap iterations
+                recent_iters = [h for h in self.experiment_history if h.get('iteration', -1) > 0][-3:]
+                for hist in recent_iters:
+                    iter_num = hist.get('iteration', '?')
+                    iter_metrics = hist.get('metrics', {})
+                    iter_approach = hist.get('approach', '')
+                    # Show first 150 chars of approach
+                    approach_summary = iter_approach[:150] + "..." if len(iter_approach) > 150 else iter_approach
+                    history_summary += f"- Iteration {iter_num}: {iter_metrics}\n  Approach: {approach_summary}\n"
+
+                # Add best metric
+                if self.best_metric is not None:
+                    history_summary += f"\n**Best metric so far**: {self.best_metric}\n"
+
+            history_context = f"{history_summary}\n## Previous Iteration Results:\nApproach tried: {approach_preview}\nMetrics achieved: {last['metrics']}\n(Note: These are PREVIOUS iteration metrics, not current){output_preview}\n"
 
         # Research context removed - agents now use ReAct loop during meetings
         # They search papers iteratively as they reason about proposals
@@ -567,6 +586,20 @@ Lead: Synthesize the team's analysis and proposals into a decisive action plan.
         print("\n📋 TEAM MEETING CONTEXT:")
         print(f"   Dataframes: {list(self.executor.data_context.keys())}")
         if history_context:
+            # Show iteration history
+            if len(self.experiment_history) > 1:
+                print(f"\n   📊 Iteration History:")
+                recent_iters = [h for h in self.experiment_history if h.get('iteration', -1) > 0][-3:]
+                for hist in recent_iters:
+                    iter_num = hist.get('iteration', '?')
+                    iter_metrics = hist.get('metrics', {})
+                    iter_approach = hist.get('approach', '')
+                    approach_summary = iter_approach[:100] + "..." if len(iter_approach) > 100 else iter_approach
+                    print(f"      - Iteration {iter_num}: {iter_metrics}")
+                    print(f"        Approach: {approach_summary}")
+                if self.best_metric is not None:
+                    print(f"      → Best metric so far: {self.best_metric}")
+                print()
             print(f"   Previous iteration: {last.get('iteration', 0)}")
             print(f"   Previous metrics: {last['metrics']}")
             print(f"   Previous approach: {last['approach'][:100]}...")

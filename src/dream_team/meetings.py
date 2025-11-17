@@ -282,23 +282,33 @@ Keep it concise (1-2 paragraphs).
             print(f"💬 {team_lead.title} (synthesis):")
             print(f"{synthesis}\n")
 
-        # Final summary
-        summary_prompt = f"""Based on this meeting transcript, create a structured summary:
+        # Use the team lead's final synthesis as the summary
+        # This is the actual action plan, not a generic overview
+        # The last synthesis in the transcript is from the final round
+        final_synthesis = synthesis  # This is the team lead's synthesis from the last round
+
+        # Generate structured metadata from transcript
+        metadata_prompt = f"""Based on this meeting transcript, extract structured metadata:
 
 {self._build_context()}
 
 Provide in JSON format:
 {{
-    "summary": "brief overview of discussion",
     "key_insights": ["insight 1", "insight 2", ...],
     "decisions": ["decision 1", "decision 2", ...],
     "action_items": ["action 1", "action 2", ...]
 }}
 """
 
-        summary = self.llm.generate_json(summary_prompt, temperature=0.3)
+        metadata = self.llm.generate_json(metadata_prompt, temperature=0.3)
 
-        return summary
+        # Return team lead's synthesis as the main summary
+        return {
+            "summary": final_synthesis,  # The detailed action plan
+            "key_insights": metadata.get("key_insights", []),
+            "decisions": metadata.get("decisions", []),
+            "action_items": metadata.get("action_items", [])
+        }
 
     def _build_context(self, max_messages: int = 10) -> str:
         """Build context string from recent transcript"""
