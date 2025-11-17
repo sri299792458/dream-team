@@ -536,7 +536,10 @@ Only output the agent specifications, nothing else.
                 for hist in recent_iters:
                     iter_num = hist.get('iteration', '?')
                     iter_metrics = hist.get('metrics', {})
-                    history_summary += f"- Iteration {iter_num}: {iter_metrics}\n"
+                    iter_approach = hist.get('approach', '')
+                    # Show first 150 chars of approach
+                    approach_summary = iter_approach[:150] + "..." if len(iter_approach) > 150 else iter_approach
+                    history_summary += f"- Iteration {iter_num}: {iter_metrics}\n  Approach: {approach_summary}\n"
 
                 # Add best metric
                 if self.best_metric is not None:
@@ -590,7 +593,10 @@ Lead: Synthesize the team's analysis and proposals into a decisive action plan.
                 for hist in recent_iters:
                     iter_num = hist.get('iteration', '?')
                     iter_metrics = hist.get('metrics', {})
+                    iter_approach = hist.get('approach', '')
+                    approach_summary = iter_approach[:100] + "..." if len(iter_approach) > 100 else iter_approach
                     print(f"      - Iteration {iter_num}: {iter_metrics}")
+                    print(f"        Approach: {approach_summary}")
                 if self.best_metric is not None:
                     print(f"      → Best metric so far: {self.best_metric}")
                 print()
