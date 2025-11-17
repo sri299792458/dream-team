@@ -68,113 +68,69 @@ class ExperimentOrchestrator:
 
     def _extract_structured_output(self, output: str, success: bool, error: str = None) -> str:
         """
-        Extract structured, useful information from code execution output.
+        Use LLM to intelligently extract useful information from code execution output.
 
-        Instead of showing last N chars (which might be useless training logs),
-        extract what actually matters: metrics, feature importance, errors, etc.
+        Instead of hardcoded parsing or truncation, let the LLM identify what's
+        important: metrics, feature importance, errors, insights, etc.
         """
-        if not success:
-            # For failures, extract the actual error
-            structured = "## Previous Iteration: FAILED\n\n"
-            if error:
-                # Extract just the error type and message, not full traceback
-                error_lines = error.strip().split('\n')
-                # Find the actual error (usually last line or line with "Error:")
-                actual_error = None
-                for line in reversed(error_lines):
-                    if 'Error' in line or 'Exception' in line:
-                        actual_error = line.strip()
-                        break
+        if not success and error:
+            # For failures, use LLM to extract meaningful error info
+            error_sample = error[-2000:] if len(error) > 2000 else error
+            extraction_prompt = f"""Extract the KEY ERROR INFORMATION from this code execution failure.
 
-                if actual_error:
-                    structured += f"**Error:** {actual_error}\n\n"
-                else:
-                    structured += f"**Error:** {error_lines[-1] if error_lines else 'Unknown error'}\n\n"
+Error/traceback:
+```
+{error_sample}
+```
 
-                # Show a bit of context (last few lines before error)
-                if len(error_lines) > 5:
-                    structured += "**Context:**\n```\n"
-                    structured += '\n'.join(error_lines[-5:-1])
-                    structured += "\n```\n"
-            else:
-                structured += "**No error message available** - code likely didn't produce output\n"
+Provide:
+1. What error occurred (error type and message)
+2. What caused it (which operation/line)
+3. Brief context
 
-            return structured
+Be concise (3-5 lines). Format as markdown.
+"""
+            try:
+                structured = self.llm.generate(extraction_prompt, temperature=0.3)
+                return "## Previous Iteration: FAILED\n\n" + structured
+            except:
+                # Fallback if LLM fails
+                return f"## Previous Iteration: FAILED\n\n```\n{error_sample}\n```"
 
-        # For successful runs, extract useful info
-        structured = "## Previous Iteration Output:\n\n"
-        lines = output.split('\n')
+        if not success and not error:
+            return "## Previous Iteration: FAILED\n\n**No error message available**"
 
-        # Filter out verbose CV lines that clutter output
-        # These are sklearn/XGBoost CV progress lines like "[CV] END alpha=1..."
-        filtered_lines = []
-        for line in lines:
-            # Skip verbose CV progress lines
-            if line.strip().startswith('[CV]') or line.strip().startswith('[Parallel'):
-                continue
-            # Skip LightGBM training iteration lines (too verbose)
-            if 'Training until validation' in line or line.strip().startswith('[LightGBM]'):
-                continue
-            filtered_lines.append(line)
+        # For successful runs, use LLM to extract insights
+        # Take strategic sample: last 4000 chars (likely has final metrics)
+        output_sample = output[-4000:] if len(output) > 4000 else output
 
-        lines = filtered_lines
+        extraction_prompt = f"""Extract KEY INFORMATION from this code execution output for the next iteration.
 
-        # Extract metrics (MAE, RMSE, accuracy, etc.)
-        metrics_found = []
-        for line in lines:
-            lower_line = line.lower()
-            if any(metric in lower_line for metric in ['mae', 'rmse', 'accuracy', 'error', 'score', 'auc', 'f1']):
-                # Check if it looks like a metric line (has numbers)
-                if any(char.isdigit() for char in line):
-                    metrics_found.append(line.strip())
+Output:
+```
+{output_sample}
+```
 
-        if metrics_found:
-            structured += "**Metrics:**\n"
-            # Show last few metrics (most recent)
-            for metric_line in metrics_found[-5:]:
-                structured += f"  {metric_line}\n"
-            structured += "\n"
+Focus on what matters:
+- Final metrics (MAE, RMSE, accuracy, etc.)
+- Feature importance (top features if shown)
+- Key insights or patterns
+- Warnings/issues
 
-        # Extract feature importance if present
-        importance_section = []
-        in_importance = False
-        for i, line in enumerate(lines):
-            if 'feature importance' in line.lower() or 'feature_importances' in line.lower():
-                in_importance = True
-                importance_section = [line]
-            elif in_importance:
-                # Continue collecting until we hit empty line or different section
-                if line.strip() == '' and len(importance_section) > 3:
-                    break
-                if line.strip():
-                    importance_section.append(line)
-                if len(importance_section) > 15:  # Limit to top 15 features
-                    break
+Ignore noise:
+- Verbose training logs (CV iterations, progress bars)
+- Redundant messages
+- Boilerplate
 
-        if importance_section:
-            structured += "**Feature Importance:**\n```\n"
-            structured += '\n'.join(importance_section[:15])
-            structured += "\n```\n\n"
+Be concise (max 10 lines). Use markdown formatting.
+"""
 
-        # Extract shape/data info
-        data_info = []
-        for line in lines:
-            if 'shape:' in line.lower() or 'training' in line.lower() and 'rows' in line.lower():
-                data_info.append(line.strip())
-
-        if data_info:
-            structured += "**Data Info:**\n"
-            for info in data_info[:5]:
-                structured += f"  {info}\n"
-            structured += "\n"
-
-        # If we found nothing useful, show last 800 chars as fallback
-        if len(structured) < 100:
-            structured += "**Output (last 800 chars):**\n```\n"
-            structured += output[-800:] if len(output) > 800 else output
-            structured += "\n```\n"
-
-        return structured
+        try:
+            structured = self.llm.generate(extraction_prompt, temperature=0.3)
+            return "## Previous Iteration Output:\n\n" + structured
+        except:
+            # Fallback if LLM fails - show last 800 chars
+            return f"## Previous Iteration Output:\n\n```\n{output[-800:]}\n```"
 
     def run(
         self,
