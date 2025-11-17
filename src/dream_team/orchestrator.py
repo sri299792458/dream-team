@@ -526,7 +526,23 @@ Only output the agent specifications, nothing else.
             # Extract approach preview to avoid slicing syntax issues in f-string
             approach = last['approach']
             approach_preview = approach[:200] + "..." if len(approach) > 200 else approach
-            history_context = f"\n## Previous Iteration Results:\nApproach tried: {approach_preview}\nMetrics achieved: {last['metrics']}\n(Note: These are PREVIOUS iteration metrics, not current){output_preview}\n"
+
+            # Build iteration history summary (last 3 iterations)
+            history_summary = ""
+            if len(self.experiment_history) > 1:  # More than just bootstrap
+                history_summary = "\n## Iteration History:\n"
+                # Get last 3 non-bootstrap iterations
+                recent_iters = [h for h in self.experiment_history if h.get('iteration', -1) > 0][-3:]
+                for hist in recent_iters:
+                    iter_num = hist.get('iteration', '?')
+                    iter_metrics = hist.get('metrics', {})
+                    history_summary += f"- Iteration {iter_num}: {iter_metrics}\n"
+
+                # Add best metric
+                if self.best_metric is not None:
+                    history_summary += f"\n**Best metric so far**: {self.best_metric}\n"
+
+            history_context = f"{history_summary}\n## Previous Iteration Results:\nApproach tried: {approach_preview}\nMetrics achieved: {last['metrics']}\n(Note: These are PREVIOUS iteration metrics, not current){output_preview}\n"
 
         # Research context removed - agents now use ReAct loop during meetings
         # They search papers iteratively as they reason about proposals
