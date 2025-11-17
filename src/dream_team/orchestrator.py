@@ -603,10 +603,14 @@ Lead: Synthesize the team's analysis and proposals into a decisive action plan.
 
         # Log synthesized approach
         print("\n📝 TEAM SYNTHESIS:")
-        print(f"   {summary[:200]}...")
+        summary_text = summary.get('summary', '')
+        if summary_text:
+            preview = summary_text[:200] + "..." if len(summary_text) > 200 else summary_text
+            print(f"   {preview}")
         print()
 
-        return summary
+        # Return the summary text (not the full dictionary)
+        return summary_text
 
     def _validate_approach(self, approach: str) -> str:
         """Validate team's proposal against actual data before implementation"""
