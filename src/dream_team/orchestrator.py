@@ -105,6 +105,20 @@ class ExperimentOrchestrator:
         structured = "## Previous Iteration Output:\n\n"
         lines = output.split('\n')
 
+        # Filter out verbose CV lines that clutter output
+        # These are sklearn/XGBoost CV progress lines like "[CV] END alpha=1..."
+        filtered_lines = []
+        for line in lines:
+            # Skip verbose CV progress lines
+            if line.strip().startswith('[CV]') or line.strip().startswith('[Parallel'):
+                continue
+            # Skip LightGBM training iteration lines (too verbose)
+            if 'Training until validation' in line or line.strip().startswith('[LightGBM]'):
+                continue
+            filtered_lines.append(line)
+
+        lines = filtered_lines
+
         # Extract metrics (MAE, RMSE, accuracy, etc.)
         metrics_found = []
         for line in lines:
