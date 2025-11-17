@@ -46,6 +46,145 @@ class Meeting:
 class TeamMeeting(Meeting):
     """Multi-agent team discussion"""
 
+    def _react_synthesis_task(self, team_lead, agenda: str, context: str, temperature: float, is_final: bool, max_steps: int = 3) -> str:
+        """
+        ReAct loop for PI synthesis: iterative reasoning to synthesize team proposals.
+
+        Pattern:
+        1. Thought: Analyze what each team member proposed
+        2. Thought: Identify conflicts, dependencies, priorities
+        3. Thought: Formulate clear action plan for coding agent
+        4. Final Answer: Write decisive synthesis
+
+        This is internal reasoning only - no external search.
+        Used for team lead to think through synthesis step-by-step.
+        """
+        print(f"   🧠 {team_lead.title} using ReAct reasoning for synthesis...")
+
+        reasoning_steps = []
+
+        for step in range(max_steps):
+            # Build context from previous thoughts
+            previous_thoughts = ""
+            if reasoning_steps:
+                previous_thoughts = "\n\nPrevious reasoning:\n" + "\n".join([
+                    f"Step {i+1}: {thought}" for i, thought in enumerate(reasoning_steps)
+                ])
+
+            # Iterative thinking prompts
+            if step == 0:
+                thinking_prompt = f"""You are synthesizing team proposals.
+
+Agenda: {agenda}
+
+Discussion so far:
+{context}
+
+Think step-by-step about WHAT WAS PROPOSED:
+- What did each team member propose?
+- What are the key ideas?
+- Are there common themes?
+
+Output only:
+Thought: [Your analysis of team proposals]
+"""
+            elif step == 1:
+                thinking_prompt = f"""You are refining your synthesis.
+
+Agenda: {agenda}
+
+Discussion so far:
+{context}
+{previous_thoughts}
+
+Think step-by-step about PRIORITIES AND DEPENDENCIES:
+- Are there any conflicts between proposals?
+- What needs to be done first?
+- What's most important for the goal?
+
+Output only:
+Thought: [Your thinking about priorities and dependencies]
+"""
+            else:
+                thinking_prompt = f"""You are finalizing your synthesis.
+
+Agenda: {agenda}
+
+Discussion so far:
+{context}
+{previous_thoughts}
+
+Think step-by-step about the ACTION PLAN:
+- What specific steps should the coding agent take?
+- In what order?
+- Any important details to emphasize?
+
+Output only:
+Thought: [Your final thoughts on the action plan]
+"""
+
+            thought = self.llm.generate(
+                thinking_prompt,
+                system_instruction=team_lead.prompt,
+                temperature=temperature * 0.7
+            ).strip()
+
+            # Remove "Thought:" prefix if present
+            if thought.startswith('Thought:'):
+                thought = thought.replace('Thought:', '').strip()
+
+            print(f"      Step {step+1}: {thought[:100]}...")
+            reasoning_steps.append(thought)
+
+        # Final: Write synthesis based on all reasoning
+        if is_final:
+            final_prompt = f"""You are providing FINAL SYNTHESIS and DECISIONS.
+
+Agenda: {agenda}
+
+Discussion so far:
+{context}
+
+Your reasoning process:
+{chr(10).join([f"Step {i+1}: {thought}" for i, thought in enumerate(reasoning_steps)])}
+
+Now write your FINAL SYNTHESIS based on your reasoning.
+
+IMPORTANT:
+- Make FINAL DECISIONS, do NOT ask clarifying questions
+- Synthesize what the team proposed into a clear action plan
+- Be decisive and specific about what to implement
+- Structure it clearly for the coding agent to understand
+
+Keep it focused (2-3 paragraphs).
+"""
+        else:
+            final_prompt = f"""You are providing intermediate synthesis.
+
+Agenda: {agenda}
+
+Discussion so far:
+{context}
+
+Your reasoning process:
+{chr(10).join([f"Step {i+1}: {thought}" for i, thought in enumerate(reasoning_steps)])}
+
+Now write your synthesis based on your reasoning.
+
+As team lead, synthesize the key points and guide the next round of discussion.
+Highlight areas of agreement and any gaps that need more exploration.
+
+Keep it concise (1-2 paragraphs).
+"""
+
+        synthesis = self.llm.generate(
+            final_prompt,
+            system_instruction=team_lead.prompt,
+            temperature=temperature * 0.8
+        )
+
+        return synthesis
+
     def run(
         self,
         team_lead: Agent,
@@ -127,46 +266,16 @@ Keep it concise (1-2 paragraphs).
                 print(f"💬 {member.title}:")
                 print(f"{response}\n")
 
-            # Team lead synthesizes
+            # Team lead synthesizes using ReAct
             is_final_round = (round_num == num_rounds - 1)
+            context = self._build_context()
 
-            if is_final_round:
-                # Final synthesis: make decisions
-                synthesis_prompt = f"""You are synthesizing the team discussion to make FINAL DECISIONS.
-
-Agenda: {agenda}
-
-Discussion so far:
-{self._build_context()}
-
-As team lead, synthesize the team's proposals into a FINAL DECISION and action plan.
-
-IMPORTANT:
-- Make FINAL DECISIONS, do NOT ask clarifying questions
-- Synthesize what the team proposed into a clear action plan
-- Be decisive and specific about what to implement
-
-Keep it focused (2-3 paragraphs).
-"""
-            else:
-                # Intermediate synthesis: guide discussion
-                synthesis_prompt = f"""You are synthesizing the team discussion.
-
-Agenda: {agenda}
-
-Discussion so far:
-{self._build_context()}
-
-As team lead, synthesize the key points and guide the next round of discussion.
-Highlight areas of agreement and any gaps that need more exploration.
-
-Keep it concise (1-2 paragraphs).
-"""
-
-            synthesis = self.llm.generate(
-                synthesis_prompt,
-                system_instruction=team_lead.prompt,
-                temperature=temperature * 0.8  # Slightly more focused
+            synthesis = self._react_synthesis_task(
+                team_lead=team_lead,
+                agenda=agenda,
+                context=context,
+                temperature=temperature * 0.8,  # Slightly more focused
+                is_final=is_final_round
             )
 
             self.add_message(team_lead.title, synthesis)
