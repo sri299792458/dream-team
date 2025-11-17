@@ -66,6 +66,102 @@ class ExperimentOrchestrator:
         self.problem_graph = None  # KnowledgeGraph extracted from problem
         self.team = None  # Team object for collective dynamics
 
+    def _extract_structured_output(self, output: str, success: bool, error: str = None) -> str:
+        """
+        Extract structured, useful information from code execution output.
+
+        Instead of showing last N chars (which might be useless training logs),
+        extract what actually matters: metrics, feature importance, errors, etc.
+        """
+        if not success:
+            # For failures, extract the actual error
+            structured = "## Previous Iteration: FAILED\n\n"
+            if error:
+                # Extract just the error type and message, not full traceback
+                error_lines = error.strip().split('\n')
+                # Find the actual error (usually last line or line with "Error:")
+                actual_error = None
+                for line in reversed(error_lines):
+                    if 'Error' in line or 'Exception' in line:
+                        actual_error = line.strip()
+                        break
+
+                if actual_error:
+                    structured += f"**Error:** {actual_error}\n\n"
+                else:
+                    structured += f"**Error:** {error_lines[-1] if error_lines else 'Unknown error'}\n\n"
+
+                # Show a bit of context (last few lines before error)
+                if len(error_lines) > 5:
+                    structured += "**Context:**\n```\n"
+                    structured += '\n'.join(error_lines[-5:-1])
+                    structured += "\n```\n"
+            else:
+                structured += "**No error message available** - code likely didn't produce output\n"
+
+            return structured
+
+        # For successful runs, extract useful info
+        structured = "## Previous Iteration Output:\n\n"
+        lines = output.split('\n')
+
+        # Extract metrics (MAE, RMSE, accuracy, etc.)
+        metrics_found = []
+        for line in lines:
+            lower_line = line.lower()
+            if any(metric in lower_line for metric in ['mae', 'rmse', 'accuracy', 'error', 'score', 'auc', 'f1']):
+                # Check if it looks like a metric line (has numbers)
+                if any(char.isdigit() for char in line):
+                    metrics_found.append(line.strip())
+
+        if metrics_found:
+            structured += "**Metrics:**\n"
+            # Show last few metrics (most recent)
+            for metric_line in metrics_found[-5:]:
+                structured += f"  {metric_line}\n"
+            structured += "\n"
+
+        # Extract feature importance if present
+        importance_section = []
+        in_importance = False
+        for i, line in enumerate(lines):
+            if 'feature importance' in line.lower() or 'feature_importances' in line.lower():
+                in_importance = True
+                importance_section = [line]
+            elif in_importance:
+                # Continue collecting until we hit empty line or different section
+                if line.strip() == '' and len(importance_section) > 3:
+                    break
+                if line.strip():
+                    importance_section.append(line)
+                if len(importance_section) > 15:  # Limit to top 15 features
+                    break
+
+        if importance_section:
+            structured += "**Feature Importance:**\n```\n"
+            structured += '\n'.join(importance_section[:15])
+            structured += "\n```\n\n"
+
+        # Extract shape/data info
+        data_info = []
+        for line in lines:
+            if 'shape:' in line.lower() or 'training' in line.lower() and 'rows' in line.lower():
+                data_info.append(line.strip())
+
+        if data_info:
+            structured += "**Data Info:**\n"
+            for info in data_info[:5]:
+                structured += f"  {info}\n"
+            structured += "\n"
+
+        # If we found nothing useful, show last 800 chars as fallback
+        if len(structured) < 100:
+            structured += "**Output (last 800 chars):**\n```\n"
+            structured += output[-800:] if len(output) > 800 else output
+            structured += "\n```\n"
+
+        return structured
+
     def run(
         self,
         problem_statement: str,
@@ -506,22 +602,22 @@ Only output the agent specifications, nothing else.
         if self.experiment_history:
             last = self.experiment_history[-1]
 
-            # Build history context with output from previous iteration
+            # Build history context with STRUCTURED output from previous iteration
             output_preview = ""
             if last['results'].get('output'):
                 output = last['results']['output']
+                success = last['results'].get('success', True)
+                error = last['results'].get('error', '')
+
                 # For bootstrap (iteration 0), show FIRST 3000 chars to include column info
-                # For other iterations, show LAST 1000 chars (recent metrics)
                 if last.get('iteration', 0) == 0:
                     if len(output) > 3000:
                         output_preview = f"\n\nBootstrap Exploration Output (first 3000 chars):\n```\n{output[:3000]}...\n```"
                     else:
                         output_preview = f"\n\nBootstrap Exploration Output:\n```\n{output}\n```"
                 else:
-                    if len(output) > 1000:
-                        output_preview = f"\n\nOutput (last 1000 chars):\n```\n...{output[-1000:]}\n```"
-                    else:
-                        output_preview = f"\n\nOutput:\n```\n{output}\n```"
+                    # For iterations 1+, use structured extraction
+                    output_preview = "\n\n" + self._extract_structured_output(output, success, error)
 
             # Extract approach preview to avoid slicing syntax issues in f-string
             approach = last['approach']
@@ -648,11 +744,18 @@ Be concise. Focus only on column name issues.
             last = self.experiment_history[-1]
             if last['results'].get('output'):
                 output = last['results']['output']
-                # Show last 2000 chars to include exploration results
-                if len(output) > 2000:
-                    previous_output_context = f"\n## Previous Iteration Output (last 2000 chars):\n```\n...{output[-2000:]}\n```\n"
+                success = last['results'].get('success', True)
+                error = last['results'].get('error', '')
+
+                # For bootstrap, show first 3000 chars (includes column schemas)
+                if last.get('iteration', 0) == 0:
+                    if len(output) > 3000:
+                        previous_output_context = f"\n## Bootstrap Exploration Output (first 3000 chars):\n```\n{output[:3000]}...\n```\n"
+                    else:
+                        previous_output_context = f"\n## Bootstrap Exploration Output:\n```\n{output}\n```\n"
                 else:
-                    previous_output_context = f"\n## Previous Iteration Output:\n```\n{output}\n```\n"
+                    # For iterations 1+, use structured extraction
+                    previous_output_context = "\n" + self._extract_structured_output(output, success, error) + "\n"
 
         # Build column schema info for coding agent
         schema_info = ""
@@ -1022,36 +1125,52 @@ Examples: "shelf life prediction", "gradient boosting regression", "deep learnin
         if len(self.experiment_history) >= 3:
             recent_history = "\n## Recent Progress:\n"
             for hist in self.experiment_history[-3:]:
-                recent_history += f"Iteration {hist['iteration']}: {hist.get('metrics', {})}\n"
+                metrics_str = hist.get('metrics', {})
+                if not metrics_str:
+                    metrics_str = "FAILED (no metrics produced)"
+                recent_history += f"Iteration {hist['iteration']}: {metrics_str}\n"
+
+        # Determine situation: failure vs plateau
+        if not current_metrics or len(current_metrics) == 0:
+            situation_desc = "The most recent iteration FAILED to produce any metrics (likely code execution error, wrong column names, or implementation issue)."
+        else:
+            situation_desc = "Progress has stalled."
 
         evolution_task = f"""
-You've hit a plateau. Analyze the team composition and decide how to evolve.
+Analyze the current situation and decide whether team evolution is needed.
+
+## Situation:
+{situation_desc}
 
 ## Current Team:
 {current_team_info if current_team_info else "Only you (PI)"}
 
 ## Current Performance:
-{current_metrics}
+{current_metrics if current_metrics else "No metrics from last iteration"}
 
 {recent_history}
 
 {papers_summary}
 
 ## Your Options:
-1. ADD a new specialist (e.g., "Add Time Series Expert with expertise in...")
-2. REMOVE an agent (e.g., "Remove ML Strategist - insights already incorporated")
-3. DEEPEN an existing agent (e.g., "Deepen ML Strategist into Deep Learning Specialist with expertise in...")
-4. MULTIPLE changes (e.g., "Add X, Remove Y, Deepen Z")
+1. NO CHANGE: Current team is fine, the issue is elsewhere (e.g., implementation bug, not lack of expertise)
+2. ADD a new specialist (e.g., "Add Time Series Expert with expertise in...")
+3. REMOVE an agent (e.g., "Remove ML Strategist - insights already incorporated")
+4. DEEPEN an existing agent (e.g., "Deepen ML Strategist into Deep Learning Specialist with expertise in...")
+5. MULTIPLE changes (e.g., "Add X, Remove Y")
 
 ## Your Task:
-Based on the plateau and research findings, what team changes will help us break through?
+Analyze whether this is a TEAM COMPOSITION issue or an IMPLEMENTATION issue.
+If the last iteration failed completely, is that because we lack expertise, or is it a bug that needs fixing?
 
-Specify each change on a new line:
+Specify your decision:
+- NO CHANGE: [Reason why current team is adequate]
+OR
 - ADD: [Title] with expertise in [expertise] to [role]
 - REMOVE: [Title] because [reason]
 - DEEPEN: [Title] into [New Title] with expertise in [new expertise]
 
-Be strategic - only make changes that address the current challenge.
+Be strategic - only evolve the team if lack of expertise is the actual problem.
 """
 
         meeting = IndividualMeeting(save_dir=str(self.results_dir / 'meetings'))
@@ -1070,15 +1189,21 @@ Be strategic - only make changes that address the current challenge.
         """
         Parse and execute PI's evolution plan.
 
-        Handles ADD, REMOVE, DEEPEN commands.
+        Handles NO CHANGE, ADD, REMOVE, DEEPEN commands.
         """
         changes_made = []
 
         for line in plan.split('\n'):
             line = line.strip()
 
+            # NO CHANGE - PI decided not to evolve team
+            if line.upper().startswith('NO CHANGE:'):
+                reason = line.split(':', 1)[1].strip() if ':' in line else "Team composition is adequate"
+                print(f"\n✋ No team evolution needed: {reason}")
+                return  # Exit early - no changes
+
             # ADD new agent
-            if line.upper().startswith('ADD:'):
+            elif line.upper().startswith('ADD:'):
                 # Parse: "ADD: Time Series Expert with expertise in ... to ..."
                 # For now, create generic specialist
                 # Future: parse and create custom agent
