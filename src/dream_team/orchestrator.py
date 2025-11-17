@@ -685,12 +685,7 @@ Implement the team's plan.
 - Import what you need, define variables
 - Use the EXACT column names from DataFrame Schemas above
 - If training/evaluating a model, compute MAE and store it in a variable (e.g., mae = ...)
-- **Suppress verbose output** - keep logs clean:
-  - Add `import warnings; warnings.filterwarnings('ignore')` at the top
-  - For sklearn: use `verbose=0` in GridSearchCV/RandomizedSearchCV
-  - For LightGBM: use `verbose=-1` parameter
-  - For XGBoost: use `verbosity=0` parameter
-  - Suppress training iteration logs - only show final metrics
+- Suppress verbose output: `warnings.filterwarnings('ignore')`, use `verbose=0` or `verbose=-1` in models
 
 Output ONLY Python code in ```python blocks.
 """
