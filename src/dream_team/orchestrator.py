@@ -1022,36 +1022,52 @@ Examples: "shelf life prediction", "gradient boosting regression", "deep learnin
         if len(self.experiment_history) >= 3:
             recent_history = "\n## Recent Progress:\n"
             for hist in self.experiment_history[-3:]:
-                recent_history += f"Iteration {hist['iteration']}: {hist.get('metrics', {})}\n"
+                metrics_str = hist.get('metrics', {})
+                if not metrics_str:
+                    metrics_str = "FAILED (no metrics produced)"
+                recent_history += f"Iteration {hist['iteration']}: {metrics_str}\n"
+
+        # Determine situation: failure vs plateau
+        if not current_metrics or len(current_metrics) == 0:
+            situation_desc = "The most recent iteration FAILED to produce any metrics (likely code execution error, wrong column names, or implementation issue)."
+        else:
+            situation_desc = "Progress has stalled."
 
         evolution_task = f"""
-You've hit a plateau. Analyze the team composition and decide how to evolve.
+Analyze the current situation and decide whether team evolution is needed.
+
+## Situation:
+{situation_desc}
 
 ## Current Team:
 {current_team_info if current_team_info else "Only you (PI)"}
 
 ## Current Performance:
-{current_metrics}
+{current_metrics if current_metrics else "No metrics from last iteration"}
 
 {recent_history}
 
 {papers_summary}
 
 ## Your Options:
-1. ADD a new specialist (e.g., "Add Time Series Expert with expertise in...")
-2. REMOVE an agent (e.g., "Remove ML Strategist - insights already incorporated")
-3. DEEPEN an existing agent (e.g., "Deepen ML Strategist into Deep Learning Specialist with expertise in...")
-4. MULTIPLE changes (e.g., "Add X, Remove Y, Deepen Z")
+1. NO CHANGE: Current team is fine, the issue is elsewhere (e.g., implementation bug, not lack of expertise)
+2. ADD a new specialist (e.g., "Add Time Series Expert with expertise in...")
+3. REMOVE an agent (e.g., "Remove ML Strategist - insights already incorporated")
+4. DEEPEN an existing agent (e.g., "Deepen ML Strategist into Deep Learning Specialist with expertise in...")
+5. MULTIPLE changes (e.g., "Add X, Remove Y")
 
 ## Your Task:
-Based on the plateau and research findings, what team changes will help us break through?
+Analyze whether this is a TEAM COMPOSITION issue or an IMPLEMENTATION issue.
+If the last iteration failed completely, is that because we lack expertise, or is it a bug that needs fixing?
 
-Specify each change on a new line:
+Specify your decision:
+- NO CHANGE: [Reason why current team is adequate]
+OR
 - ADD: [Title] with expertise in [expertise] to [role]
 - REMOVE: [Title] because [reason]
 - DEEPEN: [Title] into [New Title] with expertise in [new expertise]
 
-Be strategic - only make changes that address the current challenge.
+Be strategic - only evolve the team if lack of expertise is the actual problem.
 """
 
         meeting = IndividualMeeting(save_dir=str(self.results_dir / 'meetings'))
@@ -1070,15 +1086,21 @@ Be strategic - only make changes that address the current challenge.
         """
         Parse and execute PI's evolution plan.
 
-        Handles ADD, REMOVE, DEEPEN commands.
+        Handles NO CHANGE, ADD, REMOVE, DEEPEN commands.
         """
         changes_made = []
 
         for line in plan.split('\n'):
             line = line.strip()
 
+            # NO CHANGE - PI decided not to evolve team
+            if line.upper().startswith('NO CHANGE:'):
+                reason = line.split(':', 1)[1].strip() if ':' in line else "Team composition is adequate"
+                print(f"\n✋ No team evolution needed: {reason}")
+                return  # Exit early - no changes
+
             # ADD new agent
-            if line.upper().startswith('ADD:'):
+            elif line.upper().startswith('ADD:'):
                 # Parse: "ADD: Time Series Expert with expertise in ... to ..."
                 # For now, create generic specialist
                 # Future: parse and create custom agent
