@@ -567,13 +567,24 @@ Lead: Synthesize the team's analysis and proposals into a decisive action plan.
         print("\n📋 TEAM MEETING CONTEXT:")
         print(f"   Dataframes: {list(self.executor.data_context.keys())}")
         if history_context:
+            print(f"   Previous iteration: {last.get('iteration', 0)}")
             print(f"   Previous metrics: {last['metrics']}")
-            # Show what information is available from previous iteration
-            if not last['metrics'] or len(last['metrics']) == 0:
-                print(f"   ℹ️  No metrics yet - team will see exploration output from iteration {last.get('iteration', 0)}")
-                if last['results'].get('output'):
-                    output_len = len(last['results']['output'])
-                    print(f"   ℹ️  Output available: {output_len} chars (data exploration, column info, statistics)")
+            print(f"   Previous approach: {last['approach'][:100]}...")
+            # Show what output context is being passed
+            if last['results'].get('output'):
+                output_len = len(last['results']['output'])
+                if last.get('iteration', 0) == 0:
+                    # Bootstrap - showing first 3000 chars
+                    context_len = min(3000, output_len)
+                    print(f"   📊 Context: First {context_len} chars of bootstrap output (total: {output_len} chars)")
+                    print(f"      → Contains: column schemas, data types, basic statistics")
+                else:
+                    # Iteration - showing last 15000 chars
+                    context_len = min(15000, output_len)
+                    print(f"   📊 Context: Last {context_len} chars of iteration output (total: {output_len} chars)")
+                    print(f"      → Contains: metrics, feature importance, model results, errors")
+        else:
+            print(f"   ℹ️  No previous iteration - team starting fresh")
         print()
 
         meeting = TeamMeeting(
@@ -589,6 +600,11 @@ Lead: Synthesize the team's analysis and proposals into a decisive action plan.
 
         # Save meeting transcript
         meeting.save(f'iteration_{self.iteration:02d}_team_meeting.json')
+
+        # Log synthesized approach
+        print("\n📝 TEAM SYNTHESIS:")
+        print(f"   {summary[:200]}...")
+        print()
 
         return summary
 
@@ -671,6 +687,21 @@ Be concise. Focus only on column name issues.
             schema_info = "\n## DataFrame Schemas (use EXACT column names):\n"
             for df_name, cols in self.column_schemas.items():
                 schema_info += f"{df_name}: {cols}\n"
+
+        # Log what context is being passed to coding agent
+        print("📊 CODING AGENT CONTEXT:")
+        print(f"   Team's plan: {approach[:150]}...")
+        if self.experiment_history:
+            last = self.experiment_history[-1]
+            if last['results'].get('output'):
+                output_len = len(last['results']['output'])
+                if last.get('iteration', 0) == 0:
+                    context_len = min(3000, output_len)
+                    print(f"   Previous output: First {context_len} chars of bootstrap (total: {output_len} chars)")
+                else:
+                    context_len = min(15000, output_len)
+                    print(f"   Previous output: Last {context_len} chars of iteration {last.get('iteration', 0)} (total: {output_len} chars)")
+        print()
 
         task = f"""
 Implement the team's plan.
@@ -837,6 +868,16 @@ Output ONLY Python code in ```python blocks.
                     previous_output_context = f"\n## Previous Iteration Output (last 15000 chars):\n```\n...{output[-15000:]}\n```\n"
                 else:
                     previous_output_context = f"\n## Previous Iteration Output:\n```\n{output}\n```\n"
+
+        # Log error recovery context
+        print("🔧 ERROR RECOVERY CONTEXT:")
+        print(f"   Error: {error[:100]}...")
+        print(f"   Failed code: {len(failed_code)} chars")
+        if self.experiment_history and self.experiment_history[-1]['results'].get('output'):
+            output_len = len(self.experiment_history[-1]['results']['output'])
+            context_len = min(15000, output_len)
+            print(f"   Previous output: Last {context_len} chars (total: {output_len} chars)")
+        print()
 
         task = f"""
 Your code failed with an error. Fix it.

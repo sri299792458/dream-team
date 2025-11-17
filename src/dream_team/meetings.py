@@ -308,7 +308,7 @@ Provide in JSON format:
             for msg in recent
         ])
 
-    def _react_proposal(self, agent, agenda: str, context: str, temperature: float, max_steps: int = 2) -> str:
+    def _react_proposal(self, agent, agenda: str, context: str, temperature: float, max_steps: int = 1) -> str:
         """
         ReAct loop: agent reasons and acts iteratively before final proposal.
 
@@ -457,7 +457,7 @@ Keep it focused (1-2 paragraphs).
 
             # Add new papers with analysis
             papers_found = []
-            for result in raw_results[:2]:
+            for result in raw_results[:5]:
                 if result.title not in existing_titles:
                     paper = result.to_paper()
 
@@ -798,7 +798,7 @@ Be specific, detailed, and actionable.
 
             # Add new papers with analysis
             papers_found = []
-            for result in raw_results[:2]:
+            for result in raw_results[:5]:
                 if result.title not in existing_titles:
                     paper = result.to_paper()
 
