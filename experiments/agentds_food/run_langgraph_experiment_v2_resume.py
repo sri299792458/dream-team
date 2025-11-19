@@ -151,8 +151,15 @@ compositional factors that affect shelf life.
     print("📂 Loading data...")
     batches_train = pd.read_csv(data_dir / 'batches_train.csv')
     batches_test = pd.read_csv(data_dir / 'batches_test.csv')
-    print(f"   Train: {batches_train.shape}")
-    print(f"   Test: {batches_test.shape}\n")
+    products = pd.read_csv(data_dir / 'products.csv')
+    sites = pd.read_csv(data_dir / 'sites.csv')
+    regions = pd.read_csv(data_dir / 'regions.csv')
+
+    print(f"   batches_train: {batches_train.shape}")
+    print(f"   batches_test: {batches_test.shape}")
+    print(f"   products: {products.shape}")
+    print(f"   sites: {sites.shape}")
+    print(f"   regions: {regions.shape}\n")
 
     # ============================================================================
     # INITIALIZE OR RESUME
@@ -200,6 +207,9 @@ compositional factors that affect shelf life.
             "data_context": {
                 "batches_train": batches_train,
                 "batches_test": batches_test,
+                "products": products,
+                "sites": sites,
+                "regions": regions,
             },
 
             "team_lead": serialize_agent(team_lead),
