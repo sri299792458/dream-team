@@ -180,7 +180,12 @@ def _build_column_schemas_context(state: DreamTeamState) -> str:
     context = "## AVAILABLE COLUMNS (use EXACT names, do NOT make up columns):\n"
 
     for df_name, cols in schemas.items():
-        context += f"\n**{df_name}**: {cols}\n"
+        # Format as comma-separated list without brackets
+        if isinstance(cols, list):
+            cols_formatted = ', '.join(cols)
+        else:
+            cols_formatted = str(cols)
+        context += f"\n**{df_name}**: {cols_formatted}\n"
 
     context += "\nIMPORTANT: Only use columns listed above. Do not assume other columns exist.\n"
 

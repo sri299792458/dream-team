@@ -85,17 +85,24 @@ Output 2-3 sentences describing the exploration plan.
     # Step 2: Coding agent implements using ReAct
     print(f"💻 {coding_agent['title']} implementing...\n")
 
+    # Get dataframe info for the prompt
+    df_info_lines = []
+    for df_name, df in state['data_context'].items():
+        df_info_lines.append(f"- {df_name}: {df.shape[0]} rows")
+
     code_task = f"""Write Python code for this exploration:
 
 {exploration_plan}
 
 Available dataframes:
-{list(state['data_context'].keys())}
+{chr(10).join(df_info_lines)}
 
 Requirements:
-- Print DataFrame shapes, columns, dtypes, stats
+- For EACH dataframe, print: 'Columns: [exact_column_list]' using list(df.columns)
+- Print DataFrame shapes, dtypes, and basic statistics
 - Check for missing values
 - Show sample rows
+- DO NOT assume column names - discover them from the actual dataframes
 
 Output ONLY Python code in ```python blocks.
 """
@@ -244,7 +251,7 @@ def code_generation_node_v2(state: DreamTeamState) -> DreamTeamState:
 - Write complete, executable code
 - Import needed libraries
 - Use EXACT column names from schemas
-- Compute MAE and store in variable
+- Compute {state['target_metric'].upper()} and store in variable '{state['target_metric']}'
 - Print important outputs
 - Save models (joblib.dump, torch.save)
 - Suppress verbose output
@@ -475,7 +482,7 @@ def check_completion_node(state: DreamTeamState) -> DreamTeamState:
 
 
 def evolution_node(state: DreamTeamState) -> DreamTeamState:
-    """Evolve team (same as V1 but could use ReAct)"""
+    """Evolve team using LLM-guided evolution"""
     print(f"\n{'='*60}")
     print("TEAM EVOLUTION")
     print(f"{'='*60}\n")
@@ -490,7 +497,6 @@ def evolution_node(state: DreamTeamState) -> DreamTeamState:
 
     print(f"Evolving: {target_member.title}\n")
 
-    # Could use ReAct agent here for better evolution decisions
     evolution_prompt = f"""Evolve this agent to address current challenges.
 
 Current:
@@ -501,17 +507,21 @@ Current:
 Challenges:
 {state.get('current_results', {}).get('error', 'Performance plateau')}
 
-Propose:
-- New Title: [More specialized]
-- New Expertise: [Deeper, specific]
-- New Role: [Updated]
+Propose evolution in this exact format:
+New Title: [More specialized title]
+New Expertise: [Deeper, more specific expertise areas]
+New Role: [Updated role description]
 """
 
     evolution_output = llm.generate(evolution_prompt, temperature=0.7)
 
-    new_title = target_member.title + " (Evolved)"
-    new_expertise = target_member.expertise + ", advanced techniques"
-    new_role = target_member.role
+    # Parse evolution output
+    new_title, new_expertise, new_role = _parse_evolution_output(
+        evolution_output,
+        target_member
+    )
+
+    print(f"Evolution:\n  {target_member.title} → {new_title}\n")
 
     target_member.evolve(
         new_title=new_title,
@@ -637,6 +647,43 @@ def _extract_metrics(result: Dict, target_metric: str) -> Dict[str, Any]:
                 pass
 
     return metrics
+
+
+def _parse_evolution_output(evolution_output: str, fallback_agent: Any) -> tuple:
+    """
+    Parse evolution output from LLM.
+
+    Args:
+        evolution_output: LLM output with evolution proposal
+        fallback_agent: Agent to use for fallback values
+
+    Returns:
+        (new_title, new_expertise, new_role)
+    """
+    import re
+
+    # Try to extract fields
+    title_match = re.search(r'New Title:\s*(.+)', evolution_output, re.IGNORECASE)
+    expertise_match = re.search(r'New Expertise:\s*(.+)', evolution_output, re.IGNORECASE)
+    role_match = re.search(r'New Role:\s*(.+)', evolution_output, re.IGNORECASE)
+
+    # Extract or fallback
+    if title_match:
+        new_title = title_match.group(1).strip()
+    else:
+        new_title = fallback_agent.title + " (Evolved)"
+
+    if expertise_match:
+        new_expertise = expertise_match.group(1).strip()
+    else:
+        new_expertise = fallback_agent.expertise + ", advanced techniques"
+
+    if role_match:
+        new_role = role_match.group(1).strip()
+    else:
+        new_role = fallback_agent.role
+
+    return new_title, new_expertise, new_role
 
 
 # ============================================================================
