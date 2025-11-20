@@ -57,6 +57,8 @@ def bootstrap_node(state: DreamTeamState) -> DreamTeamState:
     # Set up executor with data context
     set_executor_context(state["data_context"])
 
+    safe_data_context = _summarize_data_context(state["data_context"])
+
     llm = get_llm()
 
     if not state["data_context"]:
