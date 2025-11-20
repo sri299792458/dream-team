@@ -10,7 +10,7 @@ Improvements over V1:
 - Better error diagnostics
 """
 
-from typing import Dict, Any, List, Literal
+from typing import Dict, Any, List, Literal, Optional
 from pathlib import Path
 
 from langgraph.graph import StateGraph, END
@@ -37,7 +37,8 @@ from .langgraph_context import (
 from .langgraph_team_meeting import run_team_meeting
 from .agent import Agent
 from .llm import get_llm
-from .utils import extract_code_from_text, save_json
+from .executor import extract_code_from_text
+from .utils import save_json
 from .langgraph_tools import set_executor_context
 
 
@@ -221,13 +222,19 @@ Lead: Synthesize into decisive action plan.
     )
 
     synthesis = meeting_result["synthesis"]
+    meeting_messages = _serialize_messages(meeting_result.get("messages", []))
+    meeting_papers = meeting_result.get("papers_found", [])
 
     # Update agent KBs with papers found
     # (In full implementation, would update state["team_members"])
 
     return {
         **state,
-        "current_approach": synthesis
+        "current_approach": synthesis,
+        "planning_context": context_text,
+        "meeting_agenda": agenda,
+        "meeting_messages": meeting_messages,
+        "meeting_papers": meeting_papers
     }
 
 
@@ -281,7 +288,8 @@ Output ONLY Python code in ```python blocks.
 
     return {
         **state,
-        "current_code": code
+        "current_code": code,
+        "coding_context": context_text
     }
 
 
@@ -420,6 +428,15 @@ Diagnose the problem and output the FIXED code in ```python blocks.
             "error_history": error_history
         },
         "metrics": metrics,
+        "context": {
+            "planning": state.get("planning_context", ""),
+            "coding": state.get("coding_context", "")
+        },
+        "meeting": {
+            "agenda": state.get("meeting_agenda", ""),
+            "messages": state.get("meeting_messages", []),
+            "papers_found": state.get("meeting_papers", [])
+        },
         "agents_snapshot": [state['team_lead']['title']] + [m['title'] for m in state['team_members']]
     }
 
@@ -583,6 +600,22 @@ def _extract_column_schemas(output: str, data_context: Dict) -> Dict[str, List[s
                         break
 
     return schemas
+
+
+def _serialize_messages(messages: List[Any]) -> List[Dict[str, str]]:
+    """Convert meeting or agent messages into serializable dicts."""
+    serialized = []
+
+    for msg in messages:
+        speaker = getattr(msg, "name", "Unknown")
+        content = getattr(msg, "content", str(msg))
+
+        serialized.append({
+            "speaker": speaker,
+            "content": content
+        })
+
+    return serialized
 
 
 def _parse_recruitment(recruitment_text: str) -> List[Agent]:

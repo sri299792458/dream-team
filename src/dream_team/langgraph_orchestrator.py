@@ -28,7 +28,8 @@ from .langgraph_tools import (
 )
 from .agent import Agent
 from .llm import get_llm
-from .utils import extract_code_from_text, save_json
+from .executor import extract_code_from_text
+from .utils import save_json
 
 
 # ============================================================================
@@ -641,7 +642,7 @@ def evolution_node(state: DreamTeamState) -> DreamTeamState:
     team_members = [deserialize_agent(m) for m in state["team_members"]]
 
     if not team_members:
-        return {...state, "should_evolve": False, "error_count": 0}
+        return {**state, "should_evolve": False, "error_count": 0}
 
     # Choose member with lowest specialization depth
     target_member = min(team_members, key=lambda m: m.specialization_depth)
