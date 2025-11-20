@@ -10,7 +10,7 @@ Improvements over V1:
 - Better error diagnostics
 """
 
-from typing import Dict, Any, List, Literal
+from typing import Dict, Any, List, Literal, Optional
 from pathlib import Path
 
 from langgraph.graph import StateGraph, END
