@@ -60,10 +60,15 @@ def bootstrap_node_v2(state: DreamTeamState) -> DreamTeamState:
 
     set_executor_context(state["data_context"])
 
-    # Step 1: PI plans exploration using ReAct
-    print(f"\n{team_lead['title']} planning exploration...\n")
+    if not state["data_context"]:
+        print("⚠️  No data_context provided; skipping bootstrap execution and using placeholder summary.\n")
+        exploration_plan = "No data available; skipping exploration until data_context is populated."
+        output = "No dataframes available; provide data_context to run exploration."
+    else:
+        # Step 1: PI plans exploration using ReAct
+        print(f"\n{team_lead['title']} planning exploration...\n")
 
-    exploration_task = f"""You've received a new research problem. Plan initial data exploration.
+        exploration_task = f"""You've received a new research problem. Plan initial data exploration.
 
 Problem:
 {state['problem_statement']}
@@ -79,27 +84,28 @@ Decide what exploration code should be written to understand:
 Output 2-3 sentences describing the exploration plan.
 """
 
-    exploration_result = invoke_planning_agent(team_lead, exploration_task)
-    exploration_plan = exploration_result["response"]
+        exploration_result = invoke_planning_agent(team_lead, exploration_task)
+        exploration_plan = exploration_result["response"]
 
-    print(f"\nExploration plan: {exploration_plan}\n")
+        print(f"\nExploration plan: {exploration_plan}\n")
 
-    # Step 2: Coding agent implements using ReAct
-    print(f"💻 {coding_agent['title']} implementing...\n")
+        # Step 2: Coding agent implements using ReAct
+        print(f"💻 {coding_agent['title']} implementing...\n")
 
-    # Get dataframe info for the prompt
-    df_info_lines = []
-    for df_name, df in state['data_context'].items():
-        df_info_lines.append(f"- {df_name}: {df.shape[0]} rows")
+        # Get dataframe info for the prompt
+        df_info_lines = []
+        for df_name, df in state['data_context'].items():
+            df_info_lines.append(f"- {df_name}: {df.shape[0]} rows")
 
-    code_task = f"""Write Python code for this exploration:
+        code_task = f"""Write Python code for this exploration:
 
 {exploration_plan}
 
-Available dataframes:
+Available in-memory pandas DataFrames (already loaded for you; do NOT read from disk):
 {chr(10).join(df_info_lines)}
 
 Requirements:
+- Use the provided DataFrames exactly as named above; do NOT call pd.read_csv or assume file paths.
 - For EACH dataframe, print: 'Columns: [exact_column_list]' using list(df.columns)
 - Print DataFrame shapes, dtypes, and basic statistics
 - Check for missing values
@@ -109,25 +115,25 @@ Requirements:
 Output ONLY Python code in ```python blocks.
 """
 
-    code_result = invoke_coding_agent(
-        coding_agent,
-        code_task,
-        max_iterations=3
-    )
+        code_result = invoke_coding_agent(
+            coding_agent,
+            code_task,
+            max_iterations=3
+        )
 
-    code = extract_code_from_text(code_result["response"])
+        code = extract_code_from_text(code_result["response"])
 
-    # Step 3: Execute
-    print("⚙️ Executing exploration...\n")
+        # Step 3: Execute
+        print("⚙️ Executing exploration...\n")
 
-    from .executor import get_executor
-    executor = get_executor()
-    result = executor.execute(code=code, description="Bootstrap exploration")
+        from .executor import get_executor
+        executor = get_executor()
+        result = executor.execute(code=code, description="Bootstrap exploration")
 
-    if not result['success']:
-        print(f"❌ Failed: {result['error']}\n")
-        # Fallback code
-        code = """
+        if not result['success']:
+            print(f"❌ Failed: {result['error']}\n")
+            # Fallback code
+            code = """
 import pandas as pd
 for name, df in [(k, v) for k, v in globals().items() if isinstance(v, pd.DataFrame)]:
     print(f"DataFrame: {name}")
@@ -136,9 +142,9 @@ for name, df in [(k, v) for k, v in globals().items() if isinstance(v, pd.DataFr
     print(f"Dtypes:\\n{df.dtypes}")
     print(f"Sample:\\n{df.head()}\\n")
 """
-        result = executor.execute(code=code, description="Fallback exploration")
+            result = executor.execute(code=code, description="Fallback exploration")
 
-    output = result.get('output', '')
+        output = result.get('output', '')
 
     # Step 4: Extract column schemas
     column_schemas = _extract_column_schemas(output, state['data_context'])
@@ -453,7 +459,7 @@ Diagnose the problem and output the FIXED code in ```python blocks.
         **state,
         "current_results": safe_result,
         "current_metrics": _make_msgpack_safe(metrics),
-        "best_metric": best_metric,
+        "best_metric": _make_msgpack_safe(best_metric),
         "best_iteration": best_iteration,
         "experiment_history": state["experiment_history"] + [safe_iteration_result],
         "error_count": state["error_count"] + (0 if result['success'] else 1)

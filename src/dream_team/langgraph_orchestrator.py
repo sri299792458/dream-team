@@ -59,10 +59,23 @@ def bootstrap_node(state: DreamTeamState) -> DreamTeamState:
 
     llm = get_llm()
 
-    # Step 1: PI decides what exploration is needed
-    print(f"\n{team_lead.title} is exploring the problem...\n")
+    if not state["data_context"]:
+        print("⚠️  No data_context provided; skipping bootstrap execution and using placeholder summary.\n")
+        exploration_plan = "No data available; skipping exploration until data_context is populated."
+        output = "No dataframes available; provide data_context to run exploration."
+        code = ""
+        result = {
+            "success": False,
+            "output": output,
+            "error": "No data_context provided",
+            "traceback": None
+        }
+        column_schemas = {}
+    else:
+        # Step 1: PI decides what exploration is needed
+        print(f"\n{team_lead.title} is exploring the problem...\n")
 
-    exploration_task = f"""
+        exploration_task = f"""
 You've received a new research problem. Before assembling a team, understand what you're dealing with.
 
 ## Problem:
@@ -80,26 +93,27 @@ Decide what initial exploration will help you understand:
 In 2-3 sentences, describe what exploration code should be written.
 """
 
-    exploration_plan = llm.generate(
-        exploration_task,
-        system_instruction=team_lead.prompt,
-        temperature=0.7
-    )
+        exploration_plan = llm.generate(
+            exploration_task,
+            system_instruction=team_lead.prompt,
+            temperature=0.7
+        )
 
-    print(f"\n{team_lead.title}'s plan:\n{exploration_plan}\n")
+        print(f"\n{team_lead.title}'s plan:\n{exploration_plan}\n")
 
-    # Step 2: Coding agent implements exploration
-    print(f"💻 {coding_agent.title} implementing exploration...\n")
+        # Step 2: Coding agent implements exploration
+        print(f"💻 {coding_agent.title} implementing exploration...\n")
 
-    code_task = f"""
+        code_task = f"""
 Implement exploration code based on this plan:
 
 {exploration_plan}
 
-## Available dataframes:
+## Available in-memory pandas DataFrames (already loaded; do NOT read from disk):
 {list(state['data_context'].keys())}
 
 ## Requirements:
+- Use the provided DataFrames exactly as named above; do NOT call pd.read_csv or assume file paths.
 - Print DataFrame shapes, columns, dtypes, summary statistics
 - Check for missing values
 - Show sample rows
@@ -108,25 +122,25 @@ Implement exploration code based on this plan:
 Output ONLY Python code in ```python blocks.
 """
 
-    code_output = llm.generate(
-        code_task,
-        system_instruction=coding_agent.prompt,
-        temperature=0.3
-    )
+        code_output = llm.generate(
+            code_task,
+            system_instruction=coding_agent.prompt,
+            temperature=0.3
+        )
 
-    code = extract_code_from_text(code_output)
+        code = extract_code_from_text(code_output)
 
-    # Step 3: Execute exploration
-    print("⚙️ Executing exploration...\n")
+        # Step 3: Execute exploration
+        print("⚙️ Executing exploration...\n")
 
-    from .executor import get_executor
-    executor = get_executor()
-    result = executor.execute(code=code, description="Bootstrap exploration")
+        from .executor import get_executor
+        executor = get_executor()
+        result = executor.execute(code=code, description="Bootstrap exploration")
 
-    if not result['success']:
-        print(f"❌ Exploration failed: {result['error']}\n")
-        # Try simplified exploration
-        fallback_code = """
+        if not result['success']:
+            print(f"❌ Exploration failed: {result['error']}\n")
+            # Try simplified exploration
+            fallback_code = """
 import pandas as pd
 
 for name, df in [(k, v) for k, v in globals().items() if isinstance(v, pd.DataFrame)]:
@@ -138,13 +152,13 @@ for name, df in [(k, v) for k, v in globals().items() if isinstance(v, pd.DataFr
     print(f"\\nDtypes:\\n{df.dtypes}")
     print(f"\\nSample:\\n{df.head()}")
 """
-        result = executor.execute(code=fallback_code, description="Fallback exploration")
+            result = executor.execute(code=fallback_code, description="Fallback exploration")
 
-    output = result.get('output', '')
-    print(f"Exploration output preview: {output[:500]}...\n")
+        output = result.get('output', '')
+        print(f"Exploration output preview: {output[:500]}...\n")
 
-    # Step 4: Extract column schemas
-    column_schemas = _extract_column_schemas(output, state['data_context'])
+        # Step 4: Extract column schemas
+        column_schemas = _extract_column_schemas(output, state['data_context'])
 
     # Step 5: PI recruits team based on findings
     print(f"\n{team_lead.title} recruiting team members...\n")
@@ -570,7 +584,7 @@ Output the FIXED code in ```python blocks.
         **state,
         "current_results": safe_result,
         "current_metrics": _make_msgpack_safe(metrics),
-        "best_metric": best_metric,
+        "best_metric": _make_msgpack_safe(best_metric),
         "best_iteration": best_iteration,
         "experiment_history": state["experiment_history"] + [safe_iteration_result],
         "error_count": state["error_count"] + (0 if result['success'] else 1)
