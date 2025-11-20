@@ -148,10 +148,17 @@ def create_research_agent(agent_data: SerializedAgent, llm: Optional[ChatGoogleG
     # Create ReAct agent with paper search tool
     tools = [search_papers]
 
+    prompt = ChatPromptTemplate.from_messages(
+        [
+            ("system", system_prompt),
+            MessagesPlaceholder(variable_name="messages"),
+        ]
+    )
+
     agent = create_react_agent(
         llm,
         tools,
-        state_modifier=system_prompt  # Injects system prompt into every call
+        prompt=prompt,
     )
 
     return agent
@@ -185,10 +192,17 @@ def create_coding_agent(agent_data: SerializedAgent, llm: Optional[ChatGoogleGen
     # Create ReAct agent with code execution tool
     tools = [execute_code]
 
+    prompt = ChatPromptTemplate.from_messages(
+        [
+            ("system", system_prompt),
+            MessagesPlaceholder(variable_name="messages"),
+        ]
+    )
+
     agent = create_react_agent(
         llm,
         tools,
-        state_modifier=system_prompt
+        prompt=prompt,
     )
 
     return agent
