@@ -60,6 +60,8 @@ def bootstrap_node_v2(state: DreamTeamState) -> DreamTeamState:
 
     set_executor_context(state["data_context"])
 
+    safe_data_context = _summarize_data_context(state["data_context"])
+
     if not state["data_context"]:
         print("⚠️  No data_context provided; skipping bootstrap execution and using placeholder summary.\n")
         exploration_plan = "No data available; skipping exploration until data_context is populated."
@@ -198,7 +200,9 @@ Be concise.
         "column_schemas": column_schemas,
         "team_members": [serialize_agent(m) for m in team_members],
         "experiment_history": [safe_bootstrap_summary],
-        "iteration": 1
+        "iteration": 1,
+        # Persist only lightweight metadata to keep checkpoints msgpack-safe
+        "data_context": safe_data_context
     }
 
 
@@ -692,6 +696,29 @@ def _extract_metrics(result: Dict, target_metric: str) -> Dict[str, Any]:
                 pass
 
     return metrics
+
+
+def _summarize_data_context(data_context: Dict[str, Any]) -> Dict[str, Any]:
+    """Downsample data_context to checkpoint-friendly metadata."""
+    summary: Dict[str, Any] = {}
+
+    try:
+        import pandas as pd
+    except Exception:
+        pd = None
+
+    for name, obj in (data_context or {}).items():
+        if pd is not None and isinstance(obj, pd.DataFrame):
+            summary[name] = {
+                "_type": "DataFrameMeta",
+                "shape": [int(obj.shape[0]), int(obj.shape[1])],
+                "columns": [str(c) for c in obj.columns],
+                "dtypes": {str(col): str(dtype) for col, dtype in obj.dtypes.items()},
+            }
+        else:
+            summary[name] = obj
+
+    return summary
 
 
 def _make_msgpack_safe(value: Any) -> Any:

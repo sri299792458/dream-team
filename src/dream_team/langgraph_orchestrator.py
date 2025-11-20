@@ -57,6 +57,8 @@ def bootstrap_node(state: DreamTeamState) -> DreamTeamState:
     # Set up executor with data context
     set_executor_context(state["data_context"])
 
+    safe_data_context = _summarize_data_context(state["data_context"])
+
     llm = get_llm()
 
     if not state["data_context"]:
@@ -217,7 +219,9 @@ Keep it concise.
         "column_schemas": column_schemas,
         "team_members": [serialize_agent(m) for m in team_members],
         "experiment_history": [bootstrap_summary],
-        "iteration": 1
+        "iteration": 1,
+        # Keep checkpoints lightweight and msgpack-safe
+        "data_context": safe_data_context
     }
 
 
@@ -771,6 +775,29 @@ def _extract_column_schemas(output: str, data_context: Dict) -> Dict[str, List[s
                         break
 
     return schemas
+
+
+def _summarize_data_context(data_context: Dict[str, Any]) -> Dict[str, Any]:
+    """Convert data_context objects into checkpoint-friendly metadata."""
+    summary: Dict[str, Any] = {}
+
+    try:
+        import pandas as pd
+    except Exception:
+        pd = None
+
+    for name, obj in (data_context or {}).items():
+        if pd is not None and isinstance(obj, pd.DataFrame):
+            summary[name] = {
+                "_type": "DataFrameMeta",
+                "shape": [int(obj.shape[0]), int(obj.shape[1])],
+                "columns": [str(c) for c in obj.columns],
+                "dtypes": {str(col): str(dtype) for col, dtype in obj.dtypes.items()},
+            }
+        else:
+            summary[name] = obj
+
+    return summary
 
 
 def _parse_recruitment(recruitment_text: str) -> List[Agent]:
