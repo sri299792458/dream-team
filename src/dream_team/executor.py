@@ -17,6 +17,9 @@ import torch
 from pathlib import Path
 
 
+_code_executor: Optional["CodeExecutor"] = None
+
+
 class CodeExecutor:
     """Executes Python code in a controlled environment"""
 
@@ -340,3 +343,21 @@ def extract_code_from_text(text: str) -> str:
 
     # If no code blocks, return as-is
     return text.strip()
+
+
+def get_executor() -> CodeExecutor:
+    """Get or create a singleton code executor."""
+
+    global _code_executor
+
+    if _code_executor is None:
+        _code_executor = CodeExecutor(data_context={})
+
+    return _code_executor
+
+
+def set_executor_context(data_context: Dict[str, Any]):
+    """Update the executor's shared data context."""
+
+    executor = get_executor()
+    executor.data_context.update(data_context or {})

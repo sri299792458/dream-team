@@ -28,7 +28,8 @@ from .langgraph_tools import (
 )
 from .agent import Agent
 from .llm import get_llm
-from .utils import extract_code_from_text, save_json
+from .executor import extract_code_from_text
+from .utils import save_json
 
 
 # ============================================================================
@@ -561,14 +562,17 @@ Output the FIXED code in ```python blocks.
     results_dir = Path(state["results_dir"])
     save_json(iteration_result, results_dir / f"iteration_{state['iteration']:02d}.json")
 
+    safe_result = _make_msgpack_safe(result)
+    safe_iteration_result = _make_msgpack_safe(iteration_result)
+
     # Update state
     updates = {
         **state,
-        "current_results": result,
-        "current_metrics": metrics,
+        "current_results": safe_result,
+        "current_metrics": _make_msgpack_safe(metrics),
         "best_metric": best_metric,
         "best_iteration": best_iteration,
-        "experiment_history": state["experiment_history"] + [iteration_result],
+        "experiment_history": state["experiment_history"] + [safe_iteration_result],
         "error_count": state["error_count"] + (0 if result['success'] else 1)
     }
 
@@ -641,7 +645,7 @@ def evolution_node(state: DreamTeamState) -> DreamTeamState:
     team_members = [deserialize_agent(m) for m in state["team_members"]]
 
     if not team_members:
-        return {...state, "should_evolve": False, "error_count": 0}
+        return {**state, "should_evolve": False, "error_count": 0}
 
     # Choose member with lowest specialization depth
     target_member = min(team_members, key=lambda m: m.specialization_depth)
@@ -893,6 +897,46 @@ def _extract_metrics(result: Dict, target_metric: str) -> Dict[str, Any]:
                 pass
 
     return metrics
+
+
+def _make_msgpack_safe(value: Any) -> Any:
+    """Recursively coerce values into msgpack-friendly forms."""
+    import numpy as np
+    import pandas as pd
+
+    if value is None or isinstance(value, (bool, int, float, str)):
+        return value
+
+    if isinstance(value, np.generic):
+        return value.item()
+    if isinstance(value, np.ndarray):
+        return value.tolist()
+
+    if isinstance(value, pd.DataFrame):
+        return {
+            "_type": "DataFrame",
+            "shape": [int(value.shape[0]), int(value.shape[1])],
+            "columns": value.columns.tolist(),
+            "dtypes": {col: str(dtype) for col, dtype in value.dtypes.items()},
+        }
+    if isinstance(value, pd.Series):
+        return {
+            "_type": "Series",
+            "length": int(len(value)),
+            "dtype": str(value.dtype),
+            "name": value.name,
+        }
+
+    if isinstance(value, dict):
+        return {k: _make_msgpack_safe(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple, set)):
+        coerced = [_make_msgpack_safe(v) for v in value]
+        return coerced if isinstance(value, list) else tuple(coerced)
+
+    try:
+        return repr(value)
+    except Exception:
+        return "<unserializable>"
 
 
 # ============================================================================
