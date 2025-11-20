@@ -69,6 +69,8 @@ class IterationResult(TypedDict):
     approach: str
     results: Dict[str, Any]
     metrics: Dict[str, Any]
+    context: NotRequired[Dict[str, str]]
+    meeting: NotRequired[Dict[str, Any]]
     agents_snapshot: List[str]
 
 
@@ -106,6 +108,11 @@ class DreamTeamState(TypedDict):
     current_code: NotRequired[str]
     current_results: NotRequired[Dict[str, Any]]
     current_metrics: NotRequired[Dict[str, Any]]
+    planning_context: NotRequired[str]
+    coding_context: NotRequired[str]
+    meeting_agenda: NotRequired[str]
+    meeting_messages: NotRequired[List[Dict[str, Any]]]
+    meeting_papers: NotRequired[List[Dict[str, Any]]]
 
     # Best tracking
     best_metric: NotRequired[Optional[float]]
