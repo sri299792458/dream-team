@@ -60,8 +60,6 @@ def bootstrap_node_v2(state: DreamTeamState) -> DreamTeamState:
 
     set_executor_context(state["data_context"])
 
-    safe_data_context = _summarize_data_context(state["data_context"])
-
     if not state["data_context"]:
         print("⚠️  No data_context provided; skipping bootstrap execution and using placeholder summary.\n")
         exploration_plan = "No data available; skipping exploration until data_context is populated."
@@ -112,7 +110,8 @@ Requirements:
 - Print DataFrame shapes, dtypes, and basic statistics
 - Check for missing values
 - Show sample rows
-- DO NOT assume column names - discover them from the actual dataframes
+        - **Never** index a column unless you've confirmed it exists (e.g., `'<some_column>' in df.columns`). If a column is missing, skip that analysis gracefully.
+        - DO NOT assume column names - discover them from the actual dataframes
 
 Output ONLY Python code in ```python blocks.
 """
@@ -194,16 +193,16 @@ Be concise.
 
     safe_bootstrap_summary = _make_msgpack_safe(bootstrap_summary)
 
-    return {
+    updated_state: DreamTeamState = {
         **state,
         "bootstrap_completed": True,
         "column_schemas": column_schemas,
         "team_members": [serialize_agent(m) for m in team_members],
         "experiment_history": [safe_bootstrap_summary],
         "iteration": 1,
-        # Persist only lightweight metadata to keep checkpoints msgpack-safe
-        "data_context": safe_data_context
     }
+
+    return _checkpoint_safe_state(updated_state)
 
 
 def team_planning_node_v2(state: DreamTeamState) -> DreamTeamState:
@@ -241,7 +240,7 @@ Lead: Synthesize into decisive action plan.
     # Update agent KBs with papers found
     # (In full implementation, would update state["team_members"])
 
-    return {
+    updated_state = {
         **state,
         "current_approach": synthesis,
         "planning_context": context_text,
@@ -249,6 +248,8 @@ Lead: Synthesize into decisive action plan.
         "meeting_messages": meeting_messages,
         "meeting_papers": meeting_papers
     }
+
+    return _checkpoint_safe_state(updated_state)
 
 
 def code_generation_node_v2(state: DreamTeamState) -> DreamTeamState:
@@ -299,11 +300,13 @@ Output ONLY Python code in ```python blocks.
     print(f"   Generated {len(code.split(chr(10)))} lines")
     print(f"   Saved to: {code_file}\n")
 
-    return {
+    updated_state: DreamTeamState = {
         **state,
         "current_code": code,
         "coding_context": context_text
     }
+
+    return _checkpoint_safe_state(updated_state)
 
 
 def execution_node_v2(state: DreamTeamState) -> DreamTeamState:
@@ -459,7 +462,7 @@ Diagnose the problem and output the FIXED code in ```python blocks.
     safe_result = _make_msgpack_safe(result)
     safe_iteration_result = _make_msgpack_safe(iteration_result)
 
-    return {
+    updated_state: DreamTeamState = {
         **state,
         "current_results": safe_result,
         "current_metrics": _make_msgpack_safe(metrics),
@@ -468,6 +471,8 @@ Diagnose the problem and output the FIXED code in ```python blocks.
         "experiment_history": state["experiment_history"] + [safe_iteration_result],
         "error_count": state["error_count"] + (0 if result['success'] else 1)
     }
+
+    return _checkpoint_safe_state(updated_state)
 
 
 # ============================================================================
@@ -507,11 +512,13 @@ def check_completion_node(state: DreamTeamState) -> DreamTeamState:
                 should_evolve = True
                 print("🧬 Evolution triggered: performance plateau\n")
 
-    return {
+    updated_state: DreamTeamState = {
         **state,
         "goal_achieved": goal_achieved,
         "should_evolve": should_evolve
     }
+
+    return _checkpoint_safe_state(updated_state)
 
 
 def evolution_node(state: DreamTeamState) -> DreamTeamState:
@@ -524,7 +531,7 @@ def evolution_node(state: DreamTeamState) -> DreamTeamState:
     team_members = [deserialize_agent(m) for m in state["team_members"]]
 
     if not team_members:
-        return {**state, "should_evolve": False, "error_count": 0}
+        return _checkpoint_safe_state({**state, "should_evolve": False, "error_count": 0})
 
     target_member = min(team_members, key=lambda m: m.specialization_depth)
 
@@ -565,17 +572,21 @@ New Role: [Updated role description]
 
     updated_members = [serialize_agent(m) for m in team_members]
 
-    return {
+    updated_state: DreamTeamState = {
         **state,
         "team_members": updated_members,
         "should_evolve": False,
         "error_count": 0
     }
 
+    return _checkpoint_safe_state(updated_state)
+
 
 def increment_iteration_node(state: DreamTeamState) -> DreamTeamState:
     """Increment iteration (same as V1)"""
-    return {**state, "iteration": state["iteration"] + 1}
+    updated_state: DreamTeamState = {**state, "iteration": state["iteration"] + 1}
+
+    return _checkpoint_safe_state(updated_state)
 
 
 def should_continue(state: DreamTeamState) -> Literal["continue", "evolve", "end"]:
@@ -719,6 +730,13 @@ def _summarize_data_context(data_context: Dict[str, Any]) -> Dict[str, Any]:
             summary[name] = obj
 
     return summary
+
+
+def _checkpoint_safe_state(state: DreamTeamState) -> DreamTeamState:
+    """Prepare state for checkpointing without hardcoding dataset assumptions."""
+    sanitized = dict(state)
+    sanitized["data_context"] = _summarize_data_context(state.get("data_context", {}))
+    return _make_msgpack_safe(sanitized)
 
 
 def _make_msgpack_safe(value: Any) -> Any:

@@ -271,15 +271,15 @@ def run_team_meeting(
     # Create meeting graph
     meeting_graph = create_team_meeting_subgraph()
 
-    # Initial state
-    initial_state: TeamMeetingState = {
+    # Initial state (sanitized for checkpointing)
+    initial_state: TeamMeetingState = _make_msgpack_safe({
         "agenda": agenda,
         "messages": [],
         "team_lead": team_lead,
         "team_members": team_members,
         "synthesis": "",
         "papers_found": []
-    }
+    })
 
     # Run meeting
     final_state = meeting_graph.invoke(initial_state)
@@ -287,11 +287,11 @@ def run_team_meeting(
     print("="*60)
     print()
 
-    return {
+    return _make_msgpack_safe({
         "synthesis": final_state.get("synthesis", ""),
         "messages": final_state.get("messages", []),
         "papers_found": final_state.get("papers_found", [])
-    }
+    })
 
 
 # Helper functions
@@ -336,3 +336,27 @@ def update_agent_kb_with_papers(agent_data: SerializedAgent, papers: List[dict])
     # Re-serialize
     from .langgraph_state import serialize_agent
     return serialize_agent(agent)
+
+
+def _make_msgpack_safe(value):
+    """Recursively coerce values into msgpack-friendly forms."""
+    import numpy as np
+
+    if value is None or isinstance(value, (bool, int, float, str)):
+        return value
+
+    if isinstance(value, np.generic):
+        return value.item()
+    if isinstance(value, np.ndarray):
+        return value.tolist()
+
+    if isinstance(value, dict):
+        return {k: _make_msgpack_safe(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple, set)):
+        coerced = [_make_msgpack_safe(v) for v in value]
+        return coerced if isinstance(value, list) else tuple(coerced)
+
+    try:
+        return repr(value)
+    except Exception:
+        return "<unserializable>"
