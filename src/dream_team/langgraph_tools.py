@@ -9,6 +9,7 @@ Provides standardized tool interfaces for:
 from typing import Optional, List, Dict, Any
 from langchain_core.tools import tool
 from pydantic import BaseModel, Field
+from .executor import get_executor, set_executor_context
 
 
 # Tool input schemas
@@ -150,10 +151,7 @@ def get_tools_for_agent(agent_type: str) -> List:
         return []
 
 
-# Singleton instances (for maintaining state across tool calls)
-
 _research_assistant = None
-_code_executor = None
 
 
 def get_research_assistant():
@@ -175,20 +173,3 @@ def get_research_assistant():
     return _research_assistant
 
 
-def get_executor():
-    """Get or create singleton code executor"""
-    global _code_executor
-
-    if _code_executor is None:
-        from .executor import CodeExecutor
-
-        # Executor will be initialized with proper data_context when graph starts
-        _code_executor = CodeExecutor(data_context={})
-
-    return _code_executor
-
-
-def set_executor_context(data_context: Dict[str, Any]):
-    """Set the data context for the executor"""
-    executor = get_executor()
-    executor.data_context.update(data_context)

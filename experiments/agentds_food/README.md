@@ -28,6 +28,14 @@ agentds_food/
 2. Set environment variable: `export GEMINI_API_KEY=your_key_here`
 3. Run notebooks in order
 
+## LangGraph workflow
+
+Prefer the LangGraph implementations for fully automated runs. Key scripts:
+- `run_langgraph_experiment_v2.py`: Enhanced V2 workflow with streaming progress.
+- `run_langgraph_experiment_v2_resume.py`: Same as V2 but with SQLite checkpoints and resume support.
+
+See `../../LANGGRAPH_WORKFLOW.md` for an end-to-end walkthrough (prerequisites, commands, checkpoints, and troubleshooting).
+
 ## Evolution Tracking
 
 Each challenge tracks:
