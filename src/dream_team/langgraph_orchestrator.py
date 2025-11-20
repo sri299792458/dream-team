@@ -28,7 +28,8 @@ from .langgraph_tools import (
 )
 from .agent import Agent
 from .llm import get_llm
-from .utils import extract_code_from_text, save_json
+from .executor import extract_code_from_text
+from .utils import save_json
 
 
 # ============================================================================
@@ -58,10 +59,23 @@ def bootstrap_node(state: DreamTeamState) -> DreamTeamState:
 
     llm = get_llm()
 
-    # Step 1: PI decides what exploration is needed
-    print(f"\n{team_lead.title} is exploring the problem...\n")
+    if not state["data_context"]:
+        print("⚠️  No data_context provided; skipping bootstrap execution and using placeholder summary.\n")
+        exploration_plan = "No data available; skipping exploration until data_context is populated."
+        output = "No dataframes available; provide data_context to run exploration."
+        code = ""
+        result = {
+            "success": False,
+            "output": output,
+            "error": "No data_context provided",
+            "traceback": None
+        }
+        column_schemas = {}
+    else:
+        # Step 1: PI decides what exploration is needed
+        print(f"\n{team_lead.title} is exploring the problem...\n")
 
-    exploration_task = f"""
+        exploration_task = f"""
 You've received a new research problem. Before assembling a team, understand what you're dealing with.
 
 ## Problem:
@@ -79,26 +93,27 @@ Decide what initial exploration will help you understand:
 In 2-3 sentences, describe what exploration code should be written.
 """
 
-    exploration_plan = llm.generate(
-        exploration_task,
-        system_instruction=team_lead.prompt,
-        temperature=0.7
-    )
+        exploration_plan = llm.generate(
+            exploration_task,
+            system_instruction=team_lead.prompt,
+            temperature=0.7
+        )
 
-    print(f"\n{team_lead.title}'s plan:\n{exploration_plan}\n")
+        print(f"\n{team_lead.title}'s plan:\n{exploration_plan}\n")
 
-    # Step 2: Coding agent implements exploration
-    print(f"💻 {coding_agent.title} implementing exploration...\n")
+        # Step 2: Coding agent implements exploration
+        print(f"💻 {coding_agent.title} implementing exploration...\n")
 
-    code_task = f"""
+        code_task = f"""
 Implement exploration code based on this plan:
 
 {exploration_plan}
 
-## Available dataframes:
+## Available in-memory pandas DataFrames (already loaded; do NOT read from disk):
 {list(state['data_context'].keys())}
 
 ## Requirements:
+- Use the provided DataFrames exactly as named above; do NOT call pd.read_csv or assume file paths.
 - Print DataFrame shapes, columns, dtypes, summary statistics
 - Check for missing values
 - Show sample rows
@@ -107,25 +122,25 @@ Implement exploration code based on this plan:
 Output ONLY Python code in ```python blocks.
 """
 
-    code_output = llm.generate(
-        code_task,
-        system_instruction=coding_agent.prompt,
-        temperature=0.3
-    )
+        code_output = llm.generate(
+            code_task,
+            system_instruction=coding_agent.prompt,
+            temperature=0.3
+        )
 
-    code = extract_code_from_text(code_output)
+        code = extract_code_from_text(code_output)
 
-    # Step 3: Execute exploration
-    print("⚙️ Executing exploration...\n")
+        # Step 3: Execute exploration
+        print("⚙️ Executing exploration...\n")
 
-    from .executor import get_executor
-    executor = get_executor()
-    result = executor.execute(code=code, description="Bootstrap exploration")
+        from .executor import get_executor
+        executor = get_executor()
+        result = executor.execute(code=code, description="Bootstrap exploration")
 
-    if not result['success']:
-        print(f"❌ Exploration failed: {result['error']}\n")
-        # Try simplified exploration
-        fallback_code = """
+        if not result['success']:
+            print(f"❌ Exploration failed: {result['error']}\n")
+            # Try simplified exploration
+            fallback_code = """
 import pandas as pd
 
 for name, df in [(k, v) for k, v in globals().items() if isinstance(v, pd.DataFrame)]:
@@ -137,13 +152,13 @@ for name, df in [(k, v) for k, v in globals().items() if isinstance(v, pd.DataFr
     print(f"\\nDtypes:\\n{df.dtypes}")
     print(f"\\nSample:\\n{df.head()}")
 """
-        result = executor.execute(code=fallback_code, description="Fallback exploration")
+            result = executor.execute(code=fallback_code, description="Fallback exploration")
 
-    output = result.get('output', '')
-    print(f"Exploration output preview: {output[:500]}...\n")
+        output = result.get('output', '')
+        print(f"Exploration output preview: {output[:500]}...\n")
 
-    # Step 4: Extract column schemas
-    column_schemas = _extract_column_schemas(output, state['data_context'])
+        # Step 4: Extract column schemas
+        column_schemas = _extract_column_schemas(output, state['data_context'])
 
     # Step 5: PI recruits team based on findings
     print(f"\n{team_lead.title} recruiting team members...\n")
@@ -561,14 +576,17 @@ Output the FIXED code in ```python blocks.
     results_dir = Path(state["results_dir"])
     save_json(iteration_result, results_dir / f"iteration_{state['iteration']:02d}.json")
 
+    safe_result = _make_msgpack_safe(result)
+    safe_iteration_result = _make_msgpack_safe(iteration_result)
+
     # Update state
     updates = {
         **state,
-        "current_results": result,
-        "current_metrics": metrics,
-        "best_metric": best_metric,
+        "current_results": safe_result,
+        "current_metrics": _make_msgpack_safe(metrics),
+        "best_metric": _make_msgpack_safe(best_metric),
         "best_iteration": best_iteration,
-        "experiment_history": state["experiment_history"] + [iteration_result],
+        "experiment_history": state["experiment_history"] + [safe_iteration_result],
         "error_count": state["error_count"] + (0 if result['success'] else 1)
     }
 
@@ -641,7 +659,7 @@ def evolution_node(state: DreamTeamState) -> DreamTeamState:
     team_members = [deserialize_agent(m) for m in state["team_members"]]
 
     if not team_members:
-        return {...state, "should_evolve": False, "error_count": 0}
+        return {**state, "should_evolve": False, "error_count": 0}
 
     # Choose member with lowest specialization depth
     target_member = min(team_members, key=lambda m: m.specialization_depth)
@@ -893,6 +911,46 @@ def _extract_metrics(result: Dict, target_metric: str) -> Dict[str, Any]:
                 pass
 
     return metrics
+
+
+def _make_msgpack_safe(value: Any) -> Any:
+    """Recursively coerce values into msgpack-friendly forms."""
+    import numpy as np
+    import pandas as pd
+
+    if value is None or isinstance(value, (bool, int, float, str)):
+        return value
+
+    if isinstance(value, np.generic):
+        return value.item()
+    if isinstance(value, np.ndarray):
+        return value.tolist()
+
+    if isinstance(value, pd.DataFrame):
+        return {
+            "_type": "DataFrame",
+            "shape": [int(value.shape[0]), int(value.shape[1])],
+            "columns": value.columns.tolist(),
+            "dtypes": {col: str(dtype) for col, dtype in value.dtypes.items()},
+        }
+    if isinstance(value, pd.Series):
+        return {
+            "_type": "Series",
+            "length": int(len(value)),
+            "dtype": str(value.dtype),
+            "name": value.name,
+        }
+
+    if isinstance(value, dict):
+        return {k: _make_msgpack_safe(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple, set)):
+        coerced = [_make_msgpack_safe(v) for v in value]
+        return coerced if isinstance(value, list) else tuple(coerced)
+
+    try:
+        return repr(value)
+    except Exception:
+        return "<unserializable>"
 
 
 # ============================================================================

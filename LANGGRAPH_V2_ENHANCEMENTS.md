@@ -135,7 +135,10 @@ def create_research_agent(agent_data, llm):
     agent = create_react_agent(
         llm,
         tools,
-        state_modifier=system_prompt  # Dynamic prompt injection
+        prompt=ChatPromptTemplate.from_messages([
+            ("system", system_prompt),
+            MessagesPlaceholder(variable_name="messages"),
+        ])  # Dynamic prompt injection
     )
 
     return agent
@@ -244,7 +247,14 @@ llm.generate(prompt + task, ...)
 ```
 agent_data = serialize_agent(agent)  # Full state including K, θ, δ
 system_prompt = create_agent_system_prompt(agent_data)  # Dynamic with math state
-react_agent = create_react_agent(llm, tools, state_modifier=system_prompt)
+react_agent = create_react_agent(
+    llm,
+    tools,
+    prompt=ChatPromptTemplate.from_messages([
+        ("system", system_prompt),
+        MessagesPlaceholder(variable_name="messages"),
+    ]),
+)
 result = react_agent.invoke({"messages": [task]})  # Built-in ReAct loop
 ```
 
