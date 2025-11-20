@@ -228,7 +228,7 @@ def serialize_agent(agent) -> SerializedAgent:
         "meetings_participated": agent.meetings_participated,
         "papers": [p.to_dict() for p in agent.knowledge_base.papers],
         "domain_facts": agent.knowledge_base.domain_facts.copy(),
-        "techniques": agent.knowledge_base.techniques.copy(),
+        "techniques": agent.knowledge_base.techniques_mastered.copy(),
         "successful_patterns": agent.knowledge_base.successful_patterns.copy(),
         "error_insights": agent.knowledge_base.error_insights.copy(),
         "K": serialize_knowledge_graph(agent.K),
@@ -257,7 +257,7 @@ def deserialize_agent(data: SerializedAgent):
     # Restore knowledge base
     agent.knowledge_base.papers = [Paper(**p) for p in data["papers"]]
     agent.knowledge_base.domain_facts = data["domain_facts"].copy()
-    agent.knowledge_base.techniques = data["techniques"].copy()
+    agent.knowledge_base.techniques_mastered = data["techniques"].copy()
     agent.knowledge_base.successful_patterns = data["successful_patterns"].copy()
     agent.knowledge_base.error_insights = data["error_insights"].copy()
 
