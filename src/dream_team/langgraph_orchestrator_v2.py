@@ -10,6 +10,7 @@ Improvements over V1:
 - Better error diagnostics
 """
 
+import atexit
 from typing import Dict, Any, List, Literal, Optional
 from pathlib import Path
 
@@ -781,7 +782,13 @@ def create_dream_team_graph_v2(checkpoint_path: Optional[Path] = None):
         print("⚠️  Using MemorySaver - checkpoints will be lost on exit")
     else:
         # Use SqliteSaver for persistent checkpoints
-        checkpointer = SqliteSaver.from_conn_string(str(checkpoint_path))
+        saver_candidate = SqliteSaver.from_conn_string(str(checkpoint_path))
+        if hasattr(saver_candidate, "__enter__") and hasattr(saver_candidate, "__exit__"):
+            saver_context = saver_candidate
+            checkpointer = saver_context.__enter__()
+            atexit.register(saver_context.__exit__, None, None, None)
+        else:
+            checkpointer = saver_candidate
         print(f"✅ Using SqliteSaver - checkpoints saved to {checkpoint_path}")
 
     return graph.compile(checkpointer=checkpointer)
