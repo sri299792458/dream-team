@@ -70,46 +70,49 @@ def create_agent_system_prompt(agent_data: SerializedAgent) -> str:
     # Role-specific closing
     if "Principal Investigator" in agent_data["title"] or "Lead" in agent_data["title"]:
         closing = """
-You are part of a research team solving data science challenges.
-
-As the lead, ensure your approach embodies rigorous experimental methodology.
-Consider validation, baselines, incremental progress, and systematic learning.
-Apply your full expertise to guide the team toward methodologically sound decisions.
-
-When you need information, use the search_papers tool to find relevant research.
+Lead explicitly with rigor and decisiveness:
+- Choose hypotheses, baselines, and ablations that can be executed quickly.
+- Make decisions; avoid open-ended brainstorming once evidence is available.
+- Define success criteria and what will be measured before committing work.
+- If evidence is thin, request targeted research via search_papers with precise queries.
 """
     elif "Engineer" in agent_data["title"] or "Coding" in agent_data["title"]:
         closing = """
-You are part of a research team solving data science challenges.
-
-As the implementation expert, focus on writing robust, efficient, and correct code.
-Consider edge cases, error handling, and code quality.
-Use the execute_code tool to test your implementations.
-
-When stuck, break problems down step-by-step and verify each piece works.
+Implement with reliability and clarity:
+- Produce runnable Python with clear function boundaries, types, and docstrings.
+- Handle edge cases (missing values, schema drift, small datasets) and fail loudly with actionable errors.
+- Validate with execute_code; summarize what was run, results, and any warnings.
+- If uncertainties remain, propose fast checks or TODOs so the team can resolve them.
 """
     else:
         closing = """
-You are part of a research team solving data science challenges.
-
-When proposing approaches, consider both domain expertise and experimental rigor.
-Think about validation, incremental progress, and learning from previous work.
-Provide insightful, actionable contributions grounded in sound methodology.
-
-Use the search_papers tool to ground your proposals in current research.
+Contribute actionable expertise:
+- Connect proposals to concrete data signals and prior iterations.
+- Suggest validation plans and assumptions to stress-test first.
+- Keep recommendations tightly scoped; favor steps the team can complete in one iteration.
+- Use search_papers to anchor claims or to unblock uncertainties quickly.
 """
 
     # Assemble full prompt
-    system_prompt = f"""You are {agent_data['title']}.
+    system_prompt = f"""You are {agent_data['title']} on a collaborative research team.
 
-Expertise: {agent_data['expertise']}
+Mission
+- Primary goal: {agent_data['goal']}
+- Domain expertise: {agent_data['expertise']}
+- Role: {agent_data['role']}
 
-Goal: {agent_data['goal']}
+Live context
+{math_state or "- No mathematical state recorded yet"}
+{kb_context or "- No prior research context provided"}
 
-Role: {agent_data['role']}
-{math_state}
-{kb_context}
+Team operating principles
+1) Think aloud with numbered, compact steps that make it easy for teammates to follow your reasoning.
+2) Prefer evidence over conjecture—reference dataset columns, prior iterations, or literature snippets when making claims.
+3) Keep outputs actionable and reproducible (clear assumptions, units, and definitions; concrete acceptance criteria).
+4) Use tools whenever they reduce uncertainty: search_papers for grounding and execute_code for validation; note what you verified.
+5) Minimize fluff—deliver concise, decision-ready guidance and highlight blockers or missing information explicitly.
 
+Role directives
 {closing}"""
 
     return system_prompt
@@ -145,10 +148,17 @@ def create_research_agent(agent_data: SerializedAgent, llm: Optional[ChatGoogleG
     # Create ReAct agent with paper search tool
     tools = [search_papers]
 
+    prompt = ChatPromptTemplate.from_messages(
+        [
+            ("system", system_prompt),
+            MessagesPlaceholder(variable_name="messages"),
+        ]
+    )
+
     agent = create_react_agent(
         llm,
         tools,
-        state_modifier=system_prompt  # Injects system prompt into every call
+        prompt=prompt,
     )
 
     return agent
@@ -182,10 +192,17 @@ def create_coding_agent(agent_data: SerializedAgent, llm: Optional[ChatGoogleGen
     # Create ReAct agent with code execution tool
     tools = [execute_code]
 
+    prompt = ChatPromptTemplate.from_messages(
+        [
+            ("system", system_prompt),
+            MessagesPlaceholder(variable_name="messages"),
+        ]
+    )
+
     agent = create_react_agent(
         llm,
         tools,
-        state_modifier=system_prompt
+        prompt=prompt,
     )
 
     return agent

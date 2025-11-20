@@ -8,6 +8,7 @@ Provides:
 - Clean up old checkpoints
 """
 
+import atexit
 from pathlib import Path
 from typing import Optional, List, Dict, Any
 import sqlite3
@@ -42,7 +43,18 @@ class CheckpointManager:
         Returns:
             SqliteSaver instance
         """
-        return SqliteSaver.from_conn_string(str(self.db_path))
+        saver_candidate = SqliteSaver.from_conn_string(str(self.db_path))
+
+        # langgraph>=0.2 wraps SqliteSaver.from_conn_string in a contextmanager
+        # to ensure connections close cleanly. Materialize the saver so callers
+        # receive the expected object with get_next_version/put capabilities.
+        if hasattr(saver_candidate, "__enter__") and hasattr(saver_candidate, "__exit__"):
+            saver_context = saver_candidate
+            saver = saver_context.__enter__()
+            atexit.register(saver_context.__exit__, None, None, None)
+            return saver
+
+        return saver_candidate
 
     def has_checkpoints(self, thread_id: str) -> bool:
         """
