@@ -241,7 +241,7 @@ def serialize_agent(agent) -> SerializedAgent:
 
 def deserialize_agent(data: SerializedAgent):
     """Convert serialized dict back to Agent"""
-    from .agent import Agent, Paper, KnowledgeBase
+    from .agent import Agent, Paper, KnowledgeBase, AgentSnapshot
 
     agent = Agent(
         title=data["title"],
@@ -267,6 +267,10 @@ def deserialize_agent(data: SerializedAgent):
     agent.δ = deserialize_depth_map(data["δ"])
     agent.dynamics = deserialize_dynamics_state(data["dynamics"])
 
-    # Note: evolution_history would need proper reconstruction if needed
+    # Restore evolution history for continuity across checkpoints
+    agent.evolution_history = [
+        AgentSnapshot(**snapshot_dict)
+        for snapshot_dict in data.get("evolution_history", [])
+    ]
 
     return agent
