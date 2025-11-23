@@ -147,3 +147,93 @@ def sanitize_for_json(obj: Any) -> Any:
     # This ensures consistency with the encoder
     json_str = robust_dumps(obj)
     return json.loads(json_str)
+
+
+def make_msgpack_safe(value: Any) -> Any:
+    """
+    Recursively coerce values into msgpack-friendly forms.
+
+    This is the centralized utility for ensuring all state values are
+    serializable by msgpack (used by LangGraph's SqliteSaver).
+
+    Handles:
+    - numpy scalars (float64, int32, etc.) -> Python native types
+    - numpy arrays -> Python lists
+    - pandas DataFrames/Series -> metadata dicts
+    - dict keys that are numpy types
+    - nested structures
+
+    Args:
+        value: Any Python value
+
+    Returns:
+        msgpack-serializable version of the value
+    """
+    if value is None or isinstance(value, (bool, int, float, str, bytes)):
+        return value
+
+    # Handle numpy scalars (int32, int64, float32, float64, bool_, etc.)
+    if isinstance(value, np.generic):
+        return value.item()
+
+    # Handle numpy arrays
+    if isinstance(value, np.ndarray):
+        return value.tolist()
+
+    # Handle pandas DataFrames
+    if isinstance(value, pd.DataFrame):
+        return {
+            "_type": "DataFrame",
+            "shape": [int(value.shape[0]), int(value.shape[1])],
+            "columns": [str(c) for c in value.columns.tolist()],
+            "dtypes": {str(col): str(dtype) for col, dtype in value.dtypes.items()},
+        }
+
+    # Handle pandas Series
+    if isinstance(value, pd.Series):
+        return {
+            "_type": "Series",
+            "length": int(len(value)),
+            "dtype": str(value.dtype),
+            "name": str(value.name) if value.name is not None else None,
+        }
+
+    # Handle pandas Index
+    if isinstance(value, pd.Index):
+        return {
+            "_type": "Index",
+            "values": [make_msgpack_safe(v) for v in value.tolist()[:10]]
+        }
+
+    # Handle Path objects
+    if isinstance(value, Path):
+        return str(value)
+
+    # Handle dicts - convert both keys and values
+    if isinstance(value, dict):
+        safe_dict = {}
+        for k, v in value.items():
+            # Convert numpy keys to native Python types
+            if isinstance(k, np.generic):
+                k = k.item()
+            elif not isinstance(k, (str, int, float, bool, type(None))):
+                k = str(k)
+            safe_dict[k] = make_msgpack_safe(v)
+        return safe_dict
+
+    # Handle lists, tuples, sets
+    if isinstance(value, (list, tuple, set)):
+        coerced = [make_msgpack_safe(v) for v in value]
+        if isinstance(value, tuple):
+            return tuple(coerced)
+        return coerced
+
+    # Handle complex numbers
+    if isinstance(value, complex):
+        return {'_type': 'complex', 'real': value.real, 'imag': value.imag}
+
+    # Fallback: convert to string representation
+    try:
+        return repr(value)
+    except Exception:
+        return "<unserializable>"

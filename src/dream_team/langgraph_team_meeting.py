@@ -21,6 +21,7 @@ from .langgraph_agents import (
 )
 from .langgraph_state import SerializedAgent, deserialize_agent
 from .agent import Paper
+from .serialization import make_msgpack_safe
 
 
 # Team meeting state
@@ -271,15 +272,15 @@ def run_team_meeting(
     # Create meeting graph
     meeting_graph = create_team_meeting_subgraph()
 
-    # Initial state
-    initial_state: TeamMeetingState = {
+    # Initial state (sanitized for checkpointing)
+    initial_state: TeamMeetingState = _make_msgpack_safe({
         "agenda": agenda,
         "messages": [],
         "team_lead": team_lead,
         "team_members": team_members,
         "synthesis": "",
         "papers_found": []
-    }
+    })
 
     # Run meeting
     final_state = meeting_graph.invoke(initial_state)
@@ -287,11 +288,11 @@ def run_team_meeting(
     print("="*60)
     print()
 
-    return {
+    return _make_msgpack_safe({
         "synthesis": final_state.get("synthesis", ""),
         "messages": final_state.get("messages", []),
         "papers_found": final_state.get("papers_found", [])
-    }
+    })
 
 
 # Helper functions
@@ -336,3 +337,8 @@ def update_agent_kb_with_papers(agent_data: SerializedAgent, papers: List[dict])
     # Re-serialize
     from .langgraph_state import serialize_agent
     return serialize_agent(agent)
+
+
+# Use centralized make_msgpack_safe from serialization module
+# Keeping alias for backwards compatibility
+_make_msgpack_safe = make_msgpack_safe
