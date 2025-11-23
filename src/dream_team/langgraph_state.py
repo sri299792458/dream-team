@@ -7,6 +7,7 @@ for mathematical framework components (K, θ, δ).
 
 from typing import TypedDict, List, Dict, Any, Optional
 from typing_extensions import NotRequired
+import numpy as np
 
 
 class SerializedKnowledgeGraph(TypedDict):
