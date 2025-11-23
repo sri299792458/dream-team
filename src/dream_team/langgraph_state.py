@@ -7,7 +7,6 @@ for mathematical framework components (K, θ, δ).
 
 from typing import TypedDict, List, Dict, Any, Optional
 from typing_extensions import NotRequired
-import numpy as np
 
 
 class SerializedKnowledgeGraph(TypedDict):
@@ -92,7 +91,7 @@ class DreamTeamState(TypedDict):
 
     # Team composition (NO operator.add - we manage this explicitly)
     team_lead: SerializedAgent
-    team_members: List[SerializedAgent]  # Replaced each update, not accumulated
+    team_members: List[SerializedAgent]  # Managed explicitly, not accumulated
     coding_agent: SerializedAgent
 
     # Iteration state
@@ -100,8 +99,8 @@ class DreamTeamState(TypedDict):
     max_iterations: int
     bootstrap_completed: bool
 
-    # Experiment history (NO operator.add - we manage this explicitly)
-    experiment_history: List[IterationResult]  # Replaced each update, not accumulated
+    # Experiment history
+    experiment_history: List[IterationResult]  # Managed explicitly, not accumulated
 
     # Current iteration working state
     current_approach: NotRequired[str]
