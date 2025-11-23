@@ -8,6 +8,7 @@ for mathematical framework components (K, θ, δ).
 from typing import TypedDict, List, Dict, Any, Optional, Annotated
 from typing_extensions import NotRequired
 import operator
+import numpy as np
 
 
 class SerializedKnowledgeGraph(TypedDict):
@@ -134,18 +135,31 @@ class DreamTeamState(TypedDict):
 
 # Serialization helpers
 
+def _to_python_type(value):
+    """Convert numpy types to Python native types for serialization."""
+    if isinstance(value, np.generic):
+        return value.item()
+    elif isinstance(value, np.ndarray):
+        return value.tolist()
+    return value
+
+
 def serialize_knowledge_graph(K) -> SerializedKnowledgeGraph:
     """Convert KnowledgeGraph to serializable dict"""
     from .knowledge_state import KnowledgeGraph
 
-    edges_list = [(c1, c2, w) for (c1, c2), w in K.edges.items()]
+    # Convert edge weights to Python floats
+    edges_list = [(c1, c2, _to_python_type(w)) for (c1, c2), w in K.edges.items()]
     embeddings_dict = {c: emb.tolist() for c, emb in K.embeddings.items()}
+
+    # Convert concept importance values to Python floats
+    concept_importance = {k: _to_python_type(v) for k, v in K.concept_importance.items()}
 
     return {
         "concepts": list(K.concepts),
         "edges": edges_list,
         "embeddings": embeddings_dict,
-        "concept_importance": K.concept_importance.copy()
+        "concept_importance": concept_importance
     }
 
 
@@ -165,7 +179,9 @@ def deserialize_knowledge_graph(data: SerializedKnowledgeGraph):
 
 def serialize_attention_distribution(θ) -> SerializedAttentionDistribution:
     """Convert AttentionDistribution to serializable dict"""
-    return {"distribution": θ.distribution.copy()}
+    # Convert distribution values to Python floats
+    distribution = {k: _to_python_type(v) for k, v in θ.distribution.items()}
+    return {"distribution": distribution}
 
 
 def deserialize_attention_distribution(data: SerializedAttentionDistribution):
@@ -179,7 +195,9 @@ def deserialize_attention_distribution(data: SerializedAttentionDistribution):
 
 def serialize_depth_map(δ) -> SerializedDepthMap:
     """Convert DepthMap to serializable dict"""
-    return {"depths": δ.depths.copy()}
+    # Convert depth values to Python floats
+    depths = {k: _to_python_type(v) for k, v in δ.depths.items()}
+    return {"depths": depths}
 
 
 def deserialize_depth_map(data: SerializedDepthMap):
@@ -193,11 +211,15 @@ def deserialize_depth_map(data: SerializedDepthMap):
 
 def serialize_dynamics_state(dynamics) -> SerializedDynamicsState:
     """Convert DynamicsState to serializable dict"""
+    # Convert lists to contain Python native types
+    contribution_scores = [_to_python_type(s) for s in dynamics.contribution_scores]
+    timestamps = [_to_python_type(t) for t in dynamics.timestamps]
+
     return {
         "attention_history": [serialize_attention_distribution(a) for a in dynamics.attention_history],
         "depth_history": [serialize_depth_map(d) for d in dynamics.depth_history],
-        "contribution_scores": dynamics.contribution_scores.copy(),
-        "timestamps": dynamics.timestamps.copy()
+        "contribution_scores": contribution_scores,
+        "timestamps": timestamps
     }
 
 
