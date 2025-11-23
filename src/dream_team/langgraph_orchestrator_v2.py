@@ -688,6 +688,30 @@ def should_continue(state: DreamTeamState) -> Literal["continue", "evolve", "end
 # HELPER FUNCTIONS
 # ============================================================================
 
+def _serialize_messages(messages: list) -> list:
+    """
+    Convert LangChain message objects to serializable dicts.
+
+    Args:
+        messages: List of LangChain message objects (AIMessage, HumanMessage, etc.)
+
+    Returns:
+        List of serializable dicts
+    """
+    serialized = []
+    for msg in messages:
+        if hasattr(msg, 'content'):
+            serialized.append({
+                'type': msg.__class__.__name__,
+                'content': msg.content,
+                'name': getattr(msg, 'name', None)
+            })
+        else:
+            # Fallback for already serialized or unknown message types
+            serialized.append(str(msg))
+    return serialized
+
+
 def _parse_recruitment(recruitment_text: str) -> List[Agent]:
     """Parse recruitment output into Agent objects"""
     agents = []
