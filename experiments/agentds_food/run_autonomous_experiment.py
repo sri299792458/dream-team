@@ -47,7 +47,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent / 'src'))
 
 from dream_team import (
     Agent,
-    ExperimentOrchestrator
+    LangGraphExperimentOrchestrator,
 )
 
 
@@ -146,7 +146,7 @@ and iteratively improve your predictions to minimize MAE.
     # Create orchestrator (team_members empty - PI will recruit during bootstrap)
     results_dir = Path(__file__).parent / 'results' / 'autonomous_shelf_life'
 
-    orchestrator = ExperimentOrchestrator(
+    orchestrator = LangGraphExperimentOrchestrator(
         team_lead=pi,
         team_members=[],  # Empty - PI will recruit after exploring
         coding_agent=coding_agent,

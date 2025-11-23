@@ -22,6 +22,7 @@ from .evolution import (
 from .meetings import TeamMeeting, IndividualMeeting
 from .executor import CodeExecutor, extract_code_from_text
 from .orchestrator import ExperimentOrchestrator
+from .langgraph_runner import LangGraphExperimentOrchestrator
 from .utils import save_json, load_json, load_summaries
 from .serialization import RobustJSONEncoder, robust_dump, robust_dumps
 from .knowledge_state import (
@@ -54,6 +55,7 @@ __all__ = [
     "CodeExecutor",
     "extract_code_from_text",
     "ExperimentOrchestrator",
+    "LangGraphExperimentOrchestrator",
     "save_json",
     "load_json",
     "load_summaries",
