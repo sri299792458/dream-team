@@ -5,9 +5,8 @@ Defines the state that flows through the graph, with proper serialization
 for mathematical framework components (K, θ, δ).
 """
 
-from typing import TypedDict, List, Dict, Any, Optional, Annotated
+from typing import TypedDict, List, Dict, Any, Optional
 from typing_extensions import NotRequired
-import operator
 import numpy as np
 
 
@@ -91,9 +90,9 @@ class DreamTeamState(TypedDict):
     data_context: Dict[str, Any]  # DataFrames and available variables
     column_schemas: NotRequired[Dict[str, List[str]]]  # Extracted column names
 
-    # Team composition
+    # Team composition (NO operator.add - we manage this explicitly)
     team_lead: SerializedAgent
-    team_members: Annotated[List[SerializedAgent], operator.add]  # Allows adding members
+    team_members: List[SerializedAgent]  # Replaced each update, not accumulated
     coding_agent: SerializedAgent
 
     # Iteration state
@@ -101,8 +100,8 @@ class DreamTeamState(TypedDict):
     max_iterations: int
     bootstrap_completed: bool
 
-    # Experiment history
-    experiment_history: Annotated[List[IterationResult], operator.add]
+    # Experiment history (NO operator.add - we manage this explicitly)
+    experiment_history: List[IterationResult]  # Replaced each update, not accumulated
 
     # Current iteration working state
     current_approach: NotRequired[str]

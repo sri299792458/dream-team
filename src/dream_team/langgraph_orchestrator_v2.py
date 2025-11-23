@@ -59,9 +59,15 @@ def bootstrap_node_v2(state: DreamTeamState) -> DreamTeamState:
     team_lead = state["team_lead"]
     coding_agent = state["coding_agent"]
 
-    set_executor_context(state["data_context"])
+    # Get the executor which has the actual DataFrames
+    # (set_executor_context was called before graph started with actual DataFrames)
+    from .executor import get_executor
+    executor = get_executor()
 
-    if not state["data_context"]:
+    # Get data context from executor (has actual DataFrames), not from state (may have metadata)
+    actual_data_context = executor.data_context
+
+    if not actual_data_context:
         print("⚠️  No data_context provided; skipping bootstrap execution and using placeholder summary.\n")
         exploration_plan = "No data available; skipping exploration until data_context is populated."
         output = "No dataframes available; provide data_context to run exploration."
@@ -75,7 +81,7 @@ Problem:
 {state['problem_statement']}
 
 Available Data:
-{list(state['data_context'].keys())}
+{list(actual_data_context.keys())}
 
 Decide what exploration code should be written to understand:
 1. Data schemas, sizes, distributions
@@ -93,10 +99,13 @@ Output 2-3 sentences describing the exploration plan.
         # Step 2: Coding agent implements using ReAct
         print(f"💻 {coding_agent['title']} implementing...\n")
 
-        # Get dataframe info for the prompt
+        # Get dataframe info for the prompt from actual DataFrames
         df_info_lines = []
-        for df_name, df in state['data_context'].items():
-            df_info_lines.append(f"- {df_name}: {df.shape[0]} rows")
+        for df_name, df in actual_data_context.items():
+            if hasattr(df, 'shape'):
+                df_info_lines.append(f"- {df_name}: {df.shape[0]} rows")
+            else:
+                df_info_lines.append(f"- {df_name}")
 
         code_task = f"""Write Python code for this exploration:
 
@@ -148,8 +157,8 @@ for name, df in [(k, v) for k, v in globals().items() if isinstance(v, pd.DataFr
 
         output = result.get('output', '')
 
-    # Step 4: Extract column schemas
-    column_schemas = _extract_column_schemas(output, state['data_context'])
+    # Step 4: Extract column schemas from actual DataFrames (not metadata)
+    column_schemas = _extract_column_schemas(output, actual_data_context)
 
     # Step 5: Recruit team using ReAct
     print(f"\n{team_lead['title']} recruiting team...\n")
