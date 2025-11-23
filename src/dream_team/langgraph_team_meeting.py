@@ -21,6 +21,7 @@ from .langgraph_agents import (
 )
 from .langgraph_state import SerializedAgent, deserialize_agent
 from .agent import Paper
+from .serialization import make_msgpack_safe
 
 
 # Team meeting state
@@ -338,25 +339,6 @@ def update_agent_kb_with_papers(agent_data: SerializedAgent, papers: List[dict])
     return serialize_agent(agent)
 
 
-def _make_msgpack_safe(value):
-    """Recursively coerce values into msgpack-friendly forms."""
-    import numpy as np
-
-    if value is None or isinstance(value, (bool, int, float, str)):
-        return value
-
-    if isinstance(value, np.generic):
-        return value.item()
-    if isinstance(value, np.ndarray):
-        return value.tolist()
-
-    if isinstance(value, dict):
-        return {k: _make_msgpack_safe(v) for k, v in value.items()}
-    if isinstance(value, (list, tuple, set)):
-        coerced = [_make_msgpack_safe(v) for v in value]
-        return coerced if isinstance(value, list) else tuple(coerced)
-
-    try:
-        return repr(value)
-    except Exception:
-        return "<unserializable>"
+# Use centralized make_msgpack_safe from serialization module
+# Keeping alias for backwards compatibility
+_make_msgpack_safe = make_msgpack_safe

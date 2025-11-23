@@ -30,6 +30,7 @@ from .agent import Agent
 from .llm import get_llm
 from .executor import extract_code_from_text
 from .utils import save_json
+from .serialization import make_msgpack_safe
 
 
 # ============================================================================
@@ -958,44 +959,9 @@ def _extract_metrics(result: Dict, target_metric: str) -> Dict[str, Any]:
     return metrics
 
 
-def _make_msgpack_safe(value: Any) -> Any:
-    """Recursively coerce values into msgpack-friendly forms."""
-    import numpy as np
-    import pandas as pd
-
-    if value is None or isinstance(value, (bool, int, float, str)):
-        return value
-
-    if isinstance(value, np.generic):
-        return value.item()
-    if isinstance(value, np.ndarray):
-        return value.tolist()
-
-    if isinstance(value, pd.DataFrame):
-        return {
-            "_type": "DataFrame",
-            "shape": [int(value.shape[0]), int(value.shape[1])],
-            "columns": value.columns.tolist(),
-            "dtypes": {col: str(dtype) for col, dtype in value.dtypes.items()},
-        }
-    if isinstance(value, pd.Series):
-        return {
-            "_type": "Series",
-            "length": int(len(value)),
-            "dtype": str(value.dtype),
-            "name": value.name,
-        }
-
-    if isinstance(value, dict):
-        return {k: _make_msgpack_safe(v) for k, v in value.items()}
-    if isinstance(value, (list, tuple, set)):
-        coerced = [_make_msgpack_safe(v) for v in value]
-        return coerced if isinstance(value, list) else tuple(coerced)
-
-    try:
-        return repr(value)
-    except Exception:
-        return "<unserializable>"
+# Use centralized make_msgpack_safe from serialization module
+# Keeping alias for backwards compatibility with any internal uses
+_make_msgpack_safe = make_msgpack_safe
 
 
 # ============================================================================
