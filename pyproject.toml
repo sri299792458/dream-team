@@ -16,6 +16,9 @@ dependencies = [
     "notebook",
     "requests",
     "google-generativeai",
+    "langgraph",
+    "langsmith",
+    "langchain-core",
 ]
 classifiers = [
     "Programming Language :: Python :: 3",
