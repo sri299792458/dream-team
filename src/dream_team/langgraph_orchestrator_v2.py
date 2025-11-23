@@ -236,17 +236,47 @@ def code_generation_node_v2(state: DreamTeamState) -> DreamTeamState:
     context = build_adaptive_context(state)
     context_text = format_context_for_coding(context, approach)
 
-    code_task = f"""{context_text}
+    # Get available DataFrames and their schemas
+    data_context = state.get("data_context", {})
+    df_names = list(data_context.keys())
+
+    # Build schema info
+    column_schemas = state.get("column_schemas", {})
+    schema_info = ""
+    if column_schemas:
+        schema_info = "\n## DataFrame Schemas (use EXACT column names):\n"
+        for df_name, cols in column_schemas.items():
+            schema_info += f"**{df_name}**: {cols}\n"
+    else:
+        # Fallback: extract column names directly from DataFrames
+        schema_info = "\n## DataFrame Schemas (use EXACT column names):\n"
+        for df_name, df in data_context.items():
+            if hasattr(df, 'columns'):
+                schema_info += f"**{df_name}**: {list(df.columns)}\n"
+
+    code_task = f"""## Team's Plan:
+{approach}
+
+## Available DataFrames:
+{df_names}
+{schema_info}
+
+## Available in execution context:
+- Pre-imported libraries: pandas (pd), numpy (np), torch, sklearn
+- DataFrames are already loaded with these exact names: {df_names}
+
+{context_text}
 
 ## Requirements:
-- Use GPU for training
+- Use the EXACT column names from DataFrame Schemas above
+- Do NOT create dummy/sample data - use the provided DataFrames
+- Use GPU for training if available (device = 'cuda' if torch.cuda.is_available() else 'cpu')
 - Write complete, executable code
-- Import needed libraries
-- Use EXACT column names from schemas
-- Compute MAE and store in variable
-- Print important outputs
-- Save models (joblib.dump, torch.save)
-- Suppress verbose output
+- Import any additional libraries you need
+- Compute MAE and store in variable named 'mae'
+- Print the MAE value clearly
+- Save models using joblib.dump or torch.save
+- Suppress verbose output (verbose=0, disable progress bars)
 
 Output ONLY Python code in ```python blocks.
 """
