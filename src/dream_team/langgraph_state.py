@@ -5,9 +5,8 @@ Defines the state that flows through the graph, with proper serialization
 for mathematical framework components (K, θ, δ).
 """
 
-from typing import TypedDict, List, Dict, Any, Optional, Annotated
+from typing import TypedDict, List, Dict, Any, Optional
 from typing_extensions import NotRequired
-import operator
 
 
 class SerializedKnowledgeGraph(TypedDict):
@@ -90,7 +89,7 @@ class DreamTeamState(TypedDict):
 
     # Team composition
     team_lead: SerializedAgent
-    team_members: Annotated[List[SerializedAgent], operator.add]  # Allows adding members
+    team_members: List[SerializedAgent]  # Managed explicitly, not accumulated
     coding_agent: SerializedAgent
 
     # Iteration state
@@ -99,7 +98,7 @@ class DreamTeamState(TypedDict):
     bootstrap_completed: bool
 
     # Experiment history
-    experiment_history: Annotated[List[IterationResult], operator.add]
+    experiment_history: List[IterationResult]  # Managed explicitly, not accumulated
 
     # Current iteration working state
     current_approach: NotRequired[str]
