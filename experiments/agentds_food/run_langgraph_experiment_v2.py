@@ -22,6 +22,8 @@ from dream_team.agent import Agent
 from dream_team.langgraph_state import serialize_agent, DreamTeamState
 from dream_team.langgraph_orchestrator_v2 import create_dream_team_graph_v2
 from dream_team.executor import CodeExecutor
+from dream_team.serialization import make_msgpack_safe
+from dream_team.langgraph_tools import set_executor_context
 
 
 def setup_langsmith_tracing():
@@ -206,6 +208,14 @@ compositional factors that affect shelf life.
     # ============================================================================
     # RUN GRAPH WITH STREAMING
     # ============================================================================
+
+    # Set executor context with actual DataFrames BEFORE running the graph
+    # This allows the bootstrap node to access the data through set_executor_context
+    set_executor_context(initial_state["data_context"])
+
+    # Make initial state msgpack-safe for checkpointing (converts DataFrames to metadata)
+    # The actual DataFrames are accessible through the executor context
+    initial_state = make_msgpack_safe(initial_state)
 
     print("🚀 Starting enhanced LangGraph execution...")
     print(f"   Max iterations: {initial_state['max_iterations']}")
