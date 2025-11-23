@@ -130,8 +130,12 @@ for name, df in [(k, v) for k, v in globals().items() if isinstance(v, pd.DataFr
 
     output = result.get('output', '')
 
-    # Step 4: Extract column schemas
-    column_schemas = _extract_column_schemas(output, state['data_context'])
+    # Step 4: Extract column schemas directly from DataFrames (reliable method)
+    column_schemas = {}
+    for df_name, df in state['data_context'].items():
+        if hasattr(df, 'columns'):
+            column_schemas[df_name] = list(df.columns)
+            print(f"   {df_name}: {len(df.columns)} columns")
 
     # Step 5: Recruit team using ReAct
     print(f"\n{team_lead['title']} recruiting team...\n")
@@ -196,12 +200,18 @@ def team_planning_node_v2(state: DreamTeamState) -> DreamTeamState:
     context = build_adaptive_context(state)
     context_text = format_context_for_planning(context)
 
+    # Get DataFrame names
+    df_names = list(state.get('data_context', {}).keys())
+
     agenda = f"""**BE CONCISE.**
+
+## Available DataFrames:
+{df_names}
 
 {context_text}
 
 ## Task:
-Team members: Propose next steps based on your expertise (2-3 sentences).
+Team members: Propose next steps based on your expertise (2-3 sentences). Use ONLY the columns listed above.
 Lead: Synthesize into decisive action plan.
 """
 
@@ -351,26 +361,55 @@ def execution_node_v2(state: DreamTeamState) -> DreamTeamState:
             # Build diagnostic context
             error_context = result.get('output', '')[-2000:] if result.get('output') else ''
 
+            # Build schema info for error context
+            column_schemas = state.get("column_schemas", {})
+            schema_info = ""
+            if column_schemas:
+                schema_info = "\n## DataFrame Schemas (use EXACT column names):\n"
+                for df_name, cols in column_schemas.items():
+                    schema_info += f"{df_name}: {cols}\n"
+
             fix_task = f"""The code failed. Diagnose the issue and provide a fix.
 
-Original task:
+## Problem Statement:
+{state['problem_statement']}
+
+## Original Approach:
 {state['current_approach']}
 
-Your code:
+## Your Code That Failed:
 ```python
 {code}
 ```
 
-Error:
+## Error:
 {result['error']}
 
-Traceback:
+## Traceback:
 {result.get('traceback', '')}
 
-Recent output:
+## Available DataFrames:
+{list(state.get('data_context', {}).keys())}
+{schema_info}
+
+## Recent Output:
 {error_context}
 
-Diagnose the problem and output the FIXED code in ```python blocks.
+## Task:
+The error shows EXACTLY what's wrong. Read the traceback line number.
+
+**For NameError `'X' is not defined`:**
+1. Look at the line number in traceback
+2. Find where you used variable `X` without defining it first
+3. Either: define `X = ...` BEFORE that line, or remove the usage
+
+**For KeyError (column doesn't exist):**
+- Check the DataFrame Schemas above for the EXACT column name
+- Use only columns that exist in the schemas
+
+**DO NOT output the same code again. Actually fix the specific line that failed.**
+
+Output ONLY the FIXED Python code in ```python blocks.
 """
 
             # Use ReAct to fix
@@ -584,26 +623,6 @@ def should_continue(state: DreamTeamState) -> Literal["continue", "evolve", "end
 # HELPER FUNCTIONS
 # ============================================================================
 
-def _extract_column_schemas(output: str, data_context: Dict) -> Dict[str, List[str]]:
-    """Extract column names from exploration output"""
-    import re
-
-    schemas = {}
-
-    for line in output.split('\n'):
-        if 'Columns:' in line or 'columns:' in line:
-            match = re.search(r'\[(.*?)\]', line)
-            if match:
-                cols_str = match.group(1)
-                cols = [c.strip().strip("'\"") for c in cols_str.split(',')]
-                for df_name in data_context.keys():
-                    if df_name in line:
-                        schemas[df_name] = cols
-                        break
-
-    return schemas
-
-
 def _parse_recruitment(recruitment_text: str) -> List[Agent]:
     """Parse recruitment output into Agent objects"""
     agents = []
@@ -641,29 +660,62 @@ def _parse_recruitment(recruitment_text: str) -> List[Agent]:
 
 
 def _extract_metrics(result: Dict, target_metric: str) -> Dict[str, Any]:
-    """Extract metrics from execution result"""
+    """Extract metrics from execution result, ensuring JSON-serializable values only"""
+    import numpy as np
+    import re
+
     metrics = {}
 
     if not result.get('success'):
         return metrics
 
-    output = result.get('output', '')
+    # First, check if executor returned metrics directly
+    raw_metrics = result.get('metrics', {})
 
-    import re
+    # Filter to only keep JSON-serializable numeric values
+    for key, value in raw_metrics.items():
+        try:
+            # Only keep simple numeric types
+            if isinstance(value, (int, float, np.integer, np.floating)):
+                metrics[key] = float(value)
+            elif isinstance(value, (list, np.ndarray)):
+                # For arrays, take the mean
+                metrics[key] = float(np.mean(value))
+        except (TypeError, ValueError, AttributeError):
+            # Skip non-numeric or non-serializable values
+            pass
 
-    patterns = [
-        r'(\w+)\s*=\s*([\d.]+)',
-        r'(\w+)\s*:\s*([\d.]+)',
-        r'(\w+)\s+is\s+([\d.]+)'
-    ]
+    # Try to find target metric in variables if not in metrics
+    if target_metric not in metrics:
+        for key, value in result.get('variables', {}).items():
+            if target_metric in key.lower():
+                try:
+                    # Handle arrays (take mean)
+                    if hasattr(value, '__iter__') and not isinstance(value, str):
+                        metrics[target_metric] = float(np.mean(value))
+                    else:
+                        metrics[target_metric] = float(value)
+                    break
+                except (TypeError, ValueError, AttributeError):
+                    pass
 
-    for pattern in patterns:
-        matches = re.findall(pattern, output.lower())
-        for metric_name, value in matches:
-            try:
-                metrics[metric_name] = float(value)
-            except:
-                pass
+    # Fallback: try to extract from output text using regex
+    if target_metric not in metrics:
+        output = result.get('output', '')
+        patterns = [
+            r'(\w+)\s*=\s*([\d.]+)',
+            r'(\w+)\s*:\s*([\d.]+)',
+            r'(\w+)\s+is\s+([\d.]+)'
+        ]
+
+        for pattern in patterns:
+            matches = re.findall(pattern, output.lower())
+            for metric_name, value in matches:
+                if metric_name not in metrics:
+                    try:
+                        metrics[metric_name] = float(value)
+                    except:
+                        pass
 
     return metrics
 
