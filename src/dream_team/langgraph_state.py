@@ -68,6 +68,8 @@ class IterationResult(TypedDict):
     approach: str
     results: Dict[str, Any]
     metrics: Dict[str, Any]
+    context: NotRequired[Dict[str, str]]
+    meeting: NotRequired[Dict[str, Any]]
     agents_snapshot: List[str]
 
 
@@ -87,7 +89,7 @@ class DreamTeamState(TypedDict):
     data_context: Dict[str, Any]  # DataFrames and available variables
     column_schemas: NotRequired[Dict[str, List[str]]]  # Extracted column names
 
-    # Team composition
+    # Team composition (NO operator.add - we manage this explicitly)
     team_lead: SerializedAgent
     team_members: List[SerializedAgent]  # Managed explicitly, not accumulated
     coding_agent: SerializedAgent
@@ -105,6 +107,11 @@ class DreamTeamState(TypedDict):
     current_code: NotRequired[str]
     current_results: NotRequired[Dict[str, Any]]
     current_metrics: NotRequired[Dict[str, Any]]
+    planning_context: NotRequired[str]
+    coding_context: NotRequired[str]
+    meeting_agenda: NotRequired[str]
+    meeting_messages: NotRequired[List[Dict[str, Any]]]
+    meeting_papers: NotRequired[List[Dict[str, Any]]]
 
     # Best tracking
     best_metric: NotRequired[Optional[float]]
@@ -126,18 +133,31 @@ class DreamTeamState(TypedDict):
 
 # Serialization helpers
 
+def _to_python_type(value):
+    """Convert numpy types to Python native types for serialization."""
+    if isinstance(value, np.generic):
+        return value.item()
+    elif isinstance(value, np.ndarray):
+        return value.tolist()
+    return value
+
+
 def serialize_knowledge_graph(K) -> SerializedKnowledgeGraph:
     """Convert KnowledgeGraph to serializable dict"""
     from .knowledge_state import KnowledgeGraph
 
-    edges_list = [(c1, c2, w) for (c1, c2), w in K.edges.items()]
+    # Convert edge weights to Python floats
+    edges_list = [(c1, c2, _to_python_type(w)) for (c1, c2), w in K.edges.items()]
     embeddings_dict = {c: emb.tolist() for c, emb in K.embeddings.items()}
+
+    # Convert concept importance values to Python floats
+    concept_importance = {k: _to_python_type(v) for k, v in K.concept_importance.items()}
 
     return {
         "concepts": list(K.concepts),
         "edges": edges_list,
         "embeddings": embeddings_dict,
-        "concept_importance": K.concept_importance.copy()
+        "concept_importance": concept_importance
     }
 
 
@@ -157,7 +177,9 @@ def deserialize_knowledge_graph(data: SerializedKnowledgeGraph):
 
 def serialize_attention_distribution(θ) -> SerializedAttentionDistribution:
     """Convert AttentionDistribution to serializable dict"""
-    return {"distribution": θ.distribution.copy()}
+    # Convert distribution values to Python floats
+    distribution = {k: _to_python_type(v) for k, v in θ.distribution.items()}
+    return {"distribution": distribution}
 
 
 def deserialize_attention_distribution(data: SerializedAttentionDistribution):
@@ -171,7 +193,9 @@ def deserialize_attention_distribution(data: SerializedAttentionDistribution):
 
 def serialize_depth_map(δ) -> SerializedDepthMap:
     """Convert DepthMap to serializable dict"""
-    return {"depths": δ.depths.copy()}
+    # Convert depth values to Python floats
+    depths = {k: _to_python_type(v) for k, v in δ.depths.items()}
+    return {"depths": depths}
 
 
 def deserialize_depth_map(data: SerializedDepthMap):
@@ -185,11 +209,15 @@ def deserialize_depth_map(data: SerializedDepthMap):
 
 def serialize_dynamics_state(dynamics) -> SerializedDynamicsState:
     """Convert DynamicsState to serializable dict"""
+    # Convert lists to contain Python native types
+    contribution_scores = [_to_python_type(s) for s in dynamics.contribution_scores]
+    timestamps = [_to_python_type(t) for t in dynamics.timestamps]
+
     return {
         "attention_history": [serialize_attention_distribution(a) for a in dynamics.attention_history],
         "depth_history": [serialize_depth_map(d) for d in dynamics.depth_history],
-        "contribution_scores": dynamics.contribution_scores.copy(),
-        "timestamps": dynamics.timestamps.copy()
+        "contribution_scores": contribution_scores,
+        "timestamps": timestamps
     }
 
 
@@ -220,7 +248,7 @@ def serialize_agent(agent) -> SerializedAgent:
         "meetings_participated": agent.meetings_participated,
         "papers": [p.to_dict() for p in agent.knowledge_base.papers],
         "domain_facts": agent.knowledge_base.domain_facts.copy(),
-        "techniques": agent.knowledge_base.techniques.copy(),
+        "techniques": agent.knowledge_base.techniques_mastered.copy(),
         "successful_patterns": agent.knowledge_base.successful_patterns.copy(),
         "error_insights": agent.knowledge_base.error_insights.copy(),
         "K": serialize_knowledge_graph(agent.K),
@@ -233,7 +261,7 @@ def serialize_agent(agent) -> SerializedAgent:
 
 def deserialize_agent(data: SerializedAgent):
     """Convert serialized dict back to Agent"""
-    from .agent import Agent, Paper, KnowledgeBase
+    from .agent import Agent, Paper, KnowledgeBase, AgentSnapshot
 
     agent = Agent(
         title=data["title"],
@@ -249,7 +277,7 @@ def deserialize_agent(data: SerializedAgent):
     # Restore knowledge base
     agent.knowledge_base.papers = [Paper(**p) for p in data["papers"]]
     agent.knowledge_base.domain_facts = data["domain_facts"].copy()
-    agent.knowledge_base.techniques = data["techniques"].copy()
+    agent.knowledge_base.techniques_mastered = data["techniques"].copy()
     agent.knowledge_base.successful_patterns = data["successful_patterns"].copy()
     agent.knowledge_base.error_insights = data["error_insights"].copy()
 
@@ -259,6 +287,10 @@ def deserialize_agent(data: SerializedAgent):
     agent.δ = deserialize_depth_map(data["δ"])
     agent.dynamics = deserialize_dynamics_state(data["dynamics"])
 
-    # Note: evolution_history would need proper reconstruction if needed
+    # Restore evolution history for continuity across checkpoints
+    agent.evolution_history = [
+        AgentSnapshot(**snapshot_dict)
+        for snapshot_dict in data.get("evolution_history", [])
+    ]
 
     return agent

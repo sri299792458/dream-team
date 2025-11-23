@@ -28,7 +28,9 @@ from .langgraph_tools import (
 )
 from .agent import Agent
 from .llm import get_llm
-from .utils import extract_code_from_text, save_json
+from .executor import extract_code_from_text
+from .utils import save_json
+from .serialization import make_msgpack_safe
 
 
 # ============================================================================
@@ -56,12 +58,27 @@ def bootstrap_node(state: DreamTeamState) -> DreamTeamState:
     # Set up executor with data context
     set_executor_context(state["data_context"])
 
+    safe_data_context = _summarize_data_context(state["data_context"])
+
     llm = get_llm()
 
-    # Step 1: PI decides what exploration is needed
-    print(f"\n{team_lead.title} is exploring the problem...\n")
+    if not state["data_context"]:
+        print("⚠️  No data_context provided; skipping bootstrap execution and using placeholder summary.\n")
+        exploration_plan = "No data available; skipping exploration until data_context is populated."
+        output = "No dataframes available; provide data_context to run exploration."
+        code = ""
+        result = {
+            "success": False,
+            "output": output,
+            "error": "No data_context provided",
+            "traceback": None
+        }
+        column_schemas = {}
+    else:
+        # Step 1: PI decides what exploration is needed
+        print(f"\n{team_lead.title} is exploring the problem...\n")
 
-    exploration_task = f"""
+        exploration_task = f"""
 You've received a new research problem. Before assembling a team, understand what you're dealing with.
 
 ## Problem:
@@ -79,53 +96,55 @@ Decide what initial exploration will help you understand:
 In 2-3 sentences, describe what exploration code should be written.
 """
 
-    exploration_plan = llm.generate(
-        exploration_task,
-        system_instruction=team_lead.prompt,
-        temperature=0.7
-    )
+        exploration_plan = llm.generate(
+            exploration_task,
+            system_instruction=team_lead.prompt,
+            temperature=0.7
+        )
 
-    print(f"\n{team_lead.title}'s plan:\n{exploration_plan}\n")
+        print(f"\n{team_lead.title}'s plan:\n{exploration_plan}\n")
 
-    # Step 2: Coding agent implements exploration
-    print(f"💻 {coding_agent.title} implementing exploration...\n")
+        # Step 2: Coding agent implements exploration
+        print(f"💻 {coding_agent.title} implementing exploration...\n")
 
-    code_task = f"""
+        code_task = f"""
 Implement exploration code based on this plan:
 
 {exploration_plan}
 
-## Available dataframes:
+## Available in-memory pandas DataFrames (already loaded; do NOT read from disk):
 {list(state['data_context'].keys())}
 
 ## Requirements:
+- Use the provided DataFrames exactly as named above; do NOT call pd.read_csv or assume file paths.
 - Print DataFrame shapes, columns, dtypes, summary statistics
 - Check for missing values
 - Show sample rows
+    - Never index a column unless you've confirmed it exists (e.g., `'<some_column>' in df.columns`); if it's missing, skip gracefully.
 - Output everything clearly so the PI can understand the data
 
 Output ONLY Python code in ```python blocks.
 """
 
-    code_output = llm.generate(
-        code_task,
-        system_instruction=coding_agent.prompt,
-        temperature=0.3
-    )
+        code_output = llm.generate(
+            code_task,
+            system_instruction=coding_agent.prompt,
+            temperature=0.3
+        )
 
-    code = extract_code_from_text(code_output)
+        code = extract_code_from_text(code_output)
 
-    # Step 3: Execute exploration
-    print("⚙️ Executing exploration...\n")
+        # Step 3: Execute exploration
+        print("⚙️ Executing exploration...\n")
 
-    from .executor import get_executor
-    executor = get_executor()
-    result = executor.execute(code=code, description="Bootstrap exploration")
+        from .executor import get_executor
+        executor = get_executor()
+        result = executor.execute(code=code, description="Bootstrap exploration")
 
-    if not result['success']:
-        print(f"❌ Exploration failed: {result['error']}\n")
-        # Try simplified exploration
-        fallback_code = """
+        if not result['success']:
+            print(f"❌ Exploration failed: {result['error']}\n")
+            # Try simplified exploration
+            fallback_code = """
 import pandas as pd
 
 for name, df in [(k, v) for k, v in globals().items() if isinstance(v, pd.DataFrame)]:
@@ -137,13 +156,13 @@ for name, df in [(k, v) for k, v in globals().items() if isinstance(v, pd.DataFr
     print(f"\\nDtypes:\\n{df.dtypes}")
     print(f"\\nSample:\\n{df.head()}")
 """
-        result = executor.execute(code=fallback_code, description="Fallback exploration")
+            result = executor.execute(code=fallback_code, description="Fallback exploration")
 
-    output = result.get('output', '')
-    print(f"Exploration output preview: {output[:500]}...\n")
+        output = result.get('output', '')
+        print(f"Exploration output preview: {output[:500]}...\n")
 
-    # Step 4: Extract column schemas
-    column_schemas = _extract_column_schemas(output, state['data_context'])
+        # Step 4: Extract column schemas
+        column_schemas = _extract_column_schemas(output, state['data_context'])
 
     # Step 5: PI recruits team based on findings
     print(f"\n{team_lead.title} recruiting team members...\n")
@@ -196,14 +215,16 @@ Keep it concise.
     }
 
     # Update state
-    return {
+    updated_state: DreamTeamState = {
         **state,
         "bootstrap_completed": True,
         "column_schemas": column_schemas,
         "team_members": [serialize_agent(m) for m in team_members],
         "experiment_history": [bootstrap_summary],
-        "iteration": 1
+        "iteration": 1,
     }
+
+    return _checkpoint_safe_state(updated_state)
 
 
 def team_planning_node(state: DreamTeamState) -> DreamTeamState:
@@ -305,10 +326,12 @@ Be decisive and concise (2-3 paragraphs).
     print(f"💬 {team_lead.title} (synthesis):\n{synthesis}\n")
 
     # Update state with approach
-    return {
+    updated_state = {
         **state,
         "current_approach": synthesis
     }
+
+    return _checkpoint_safe_state(updated_state)
 
 
 def code_generation_node(state: DreamTeamState) -> DreamTeamState:
@@ -427,10 +450,12 @@ Output ONLY Python code in ```python blocks.
     print(f"   Saved to: {code_file}\n")
 
     # Update state
-    return {
+    updated_state: DreamTeamState = {
         **state,
         "current_code": code
     }
+
+    return _checkpoint_safe_state(updated_state)
 
 
 def execution_node(state: DreamTeamState) -> DreamTeamState:
@@ -561,18 +586,21 @@ Output the FIXED code in ```python blocks.
     results_dir = Path(state["results_dir"])
     save_json(iteration_result, results_dir / f"iteration_{state['iteration']:02d}.json")
 
+    safe_result = _make_msgpack_safe(result)
+    safe_iteration_result = _make_msgpack_safe(iteration_result)
+
     # Update state
-    updates = {
+    updates: DreamTeamState = {
         **state,
-        "current_results": result,
-        "current_metrics": metrics,
-        "best_metric": best_metric,
+        "current_results": safe_result,
+        "current_metrics": _make_msgpack_safe(metrics),
+        "best_metric": _make_msgpack_safe(best_metric),
         "best_iteration": best_iteration,
-        "experiment_history": state["experiment_history"] + [iteration_result],
+        "experiment_history": state["experiment_history"] + [safe_iteration_result],
         "error_count": state["error_count"] + (0 if result['success'] else 1)
     }
 
-    return updates
+    return _checkpoint_safe_state(updates)
 
 
 def check_completion_node(state: DreamTeamState) -> DreamTeamState:
@@ -618,11 +646,13 @@ def check_completion_node(state: DreamTeamState) -> DreamTeamState:
                 should_evolve = True
                 print("🧬 Evolution triggered: performance plateau\n")
 
-    return {
+    updated_state: DreamTeamState = {
         **state,
         "goal_achieved": goal_achieved,
         "should_evolve": should_evolve
     }
+
+    return _checkpoint_safe_state(updated_state)
 
 
 def evolution_node(state: DreamTeamState) -> DreamTeamState:
@@ -641,7 +671,7 @@ def evolution_node(state: DreamTeamState) -> DreamTeamState:
     team_members = [deserialize_agent(m) for m in state["team_members"]]
 
     if not team_members:
-        return {...state, "should_evolve": False, "error_count": 0}
+        return _checkpoint_safe_state({**state, "should_evolve": False, "error_count": 0})
 
     # Choose member with lowest specialization depth
     target_member = min(team_members, key=lambda m: m.specialization_depth)
@@ -685,20 +715,24 @@ Keep it concise.
     # Update state
     updated_members = [serialize_agent(m) for m in team_members]
 
-    return {
+    updated_state: DreamTeamState = {
         **state,
         "team_members": updated_members,
         "should_evolve": False,
         "error_count": 0  # Reset error count
     }
 
+    return _checkpoint_safe_state(updated_state)
+
 
 def increment_iteration_node(state: DreamTeamState) -> DreamTeamState:
     """Increment iteration counter"""
-    return {
+    updated_state: DreamTeamState = {
         **state,
         "iteration": state["iteration"] + 1
     }
+
+    return _checkpoint_safe_state(updated_state)
 
 
 # ============================================================================
@@ -753,6 +787,36 @@ def _extract_column_schemas(output: str, data_context: Dict) -> Dict[str, List[s
                         break
 
     return schemas
+
+
+def _summarize_data_context(data_context: Dict[str, Any]) -> Dict[str, Any]:
+    """Convert data_context objects into checkpoint-friendly metadata."""
+    summary: Dict[str, Any] = {}
+
+    try:
+        import pandas as pd
+    except Exception:
+        pd = None
+
+    for name, obj in (data_context or {}).items():
+        if pd is not None and isinstance(obj, pd.DataFrame):
+            summary[name] = {
+                "_type": "DataFrameMeta",
+                "shape": [int(obj.shape[0]), int(obj.shape[1])],
+                "columns": [str(c) for c in obj.columns],
+                "dtypes": {str(col): str(dtype) for col, dtype in obj.dtypes.items()},
+            }
+        else:
+            summary[name] = obj
+
+    return summary
+
+
+def _checkpoint_safe_state(state: DreamTeamState) -> DreamTeamState:
+    """Prepare state for checkpointing without hardcoding dataset assumptions."""
+    sanitized = dict(state)
+    sanitized["data_context"] = _summarize_data_context(state.get("data_context", {}))
+    return _make_msgpack_safe(sanitized)
 
 
 def _parse_recruitment(recruitment_text: str) -> List[Agent]:
@@ -893,6 +957,11 @@ def _extract_metrics(result: Dict, target_metric: str) -> Dict[str, Any]:
                 pass
 
     return metrics
+
+
+# Use centralized make_msgpack_safe from serialization module
+# Keeping alias for backwards compatibility with any internal uses
+_make_msgpack_safe = make_msgpack_safe
 
 
 # ============================================================================
