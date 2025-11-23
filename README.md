@@ -44,6 +44,10 @@ Agents operate with full autonomy:
 
 ### Autonomous Mode (Recommended)
 
+The LangGraph-backed runner keeps prompts benchmark-agnostic while wiring the
+PI-led kickoff → team meeting → implementation → execution → evolution loop
+into a traced state graph.
+
 ```bash
 cd experiments/agentds_food
 python run_autonomous_experiment.py
@@ -55,6 +59,12 @@ Agents autonomously:
 3. Analyze results
 4. Evolve when stuck
 5. Iterate until goal achieved
+
+### Notebook Demo
+
+Open `notebooks/autonomous_experiment_demo.ipynb` to run the LangGraph autonomous loop in Jupyter. The first cell installs
+project dependencies if needed, adds `src/` to `PYTHONPATH`, and sets the Gemini, Semantic Scholar, and LangSmith API keys so
+imports like `google.generativeai` are available before executing the full experiment script in the next cell.
 
 ### API Usage
 
@@ -116,6 +126,7 @@ src/dream_team/
 ├── meetings.py        # Team and individual meetings
 ├── executor.py        # Code execution environment
 ├── orchestrator.py    # Autonomous experiment orchestration
+├── langgraph_runner.py # LangGraph state graph + tracing-ready runner
 └── utils.py           # Helper functions
 
 experiments/agentds_food/
