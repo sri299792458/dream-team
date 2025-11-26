@@ -483,11 +483,11 @@ Keep it focused (1-2 paragraphs).
             if len(search_query) > 50:
                 search_query = search_query[:50]
 
-            # Search
+            # Search with wider year range to include seminal papers
             raw_results = self.research_api.search(
                 query=search_query,
                 limit=5,
-                year_range=(2018, 2025)
+                year_range=(2015, 2025)
             )
 
             if not raw_results:
@@ -824,11 +824,11 @@ Be specific, detailed, and actionable.
             if len(search_query) > 50:
                 search_query = search_query[:50]
 
-            # Search
+            # Search with wider year range to include seminal papers
             raw_results = self.research_api.search(
                 query=search_query,
                 limit=5,
-                year_range=(2018, 2025)
+                year_range=(2015, 2025)
             )
 
             if not raw_results:
