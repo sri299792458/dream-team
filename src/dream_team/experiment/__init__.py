@@ -18,6 +18,12 @@ from .graph_app import (
     create_experiment_graph,
     run_graph_experiment
 )
+from .tracing import (
+    configure_langsmith,
+    trace_experiment,
+    create_experiment_metadata,
+    create_node_metadata
+)
 
 __all__ = [
     'ExperimentState',
@@ -29,5 +35,9 @@ __all__ = [
     'EvolutionState',
     'create_initial_state',
     'create_experiment_graph',
-    'run_graph_experiment'
+    'run_graph_experiment',
+    'configure_langsmith',
+    'trace_experiment',
+    'create_experiment_metadata',
+    'create_node_metadata'
 ]

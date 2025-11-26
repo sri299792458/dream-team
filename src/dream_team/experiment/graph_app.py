@@ -34,6 +34,7 @@ Each node accepts and returns ExperimentState.
 from typing import Literal, Dict, Any, Optional
 from langgraph.graph import StateGraph, END
 from pathlib import Path
+import os
 
 from .state import ExperimentState
 from .nodes import (
@@ -47,6 +48,7 @@ from .nodes import (
     create_check_evolution_node,
     create_evolve_node
 )
+from .tracing import configure_langsmith, trace_experiment, create_experiment_metadata
 
 
 # Node functions are now created via factory functions in nodes.py
@@ -208,7 +210,9 @@ def create_experiment_graph(ctx: ExecutionContext) -> StateGraph:
 def run_graph_experiment(
     state: ExperimentState,
     data_context: Dict[str, Any],
-    research_api: Optional[Any] = None
+    research_api: Optional[Any] = None,
+    enable_tracing: bool = True,
+    langsmith_project: Optional[str] = None
 ) -> ExperimentState:
     """
     Run the experiment using the LangGraph.
@@ -217,9 +221,15 @@ def run_graph_experiment(
         state: Initial experiment state
         data_context: Data context with DataFrames and other objects
         research_api: Optional research API for paper search
+        enable_tracing: Whether to enable LangSmith tracing (default: True)
+        langsmith_project: Optional LangSmith project name (default: "dream-team-experiments")
 
     Returns:
         Final experiment state
+
+    Environment Variables (for tracing):
+        LANGSMITH_API_KEY: LangSmith API key (required for tracing)
+        LANGSMITH_PROJECT: Project name (optional, overrides langsmith_project arg)
     """
     print("="*70)
     print("🚀 LANGGRAPH EXPERIMENT ORCHESTRATION")
@@ -228,6 +238,11 @@ def run_graph_experiment(
     print(f"Target Metric: {state.config.target_metric} ({'minimize' if state.config.minimize_metric else 'maximize'})")
     print(f"Max Iterations: {state.config.max_iterations}")
     print()
+
+    # Configure LangSmith tracing if enabled
+    if enable_tracing:
+        project = langsmith_project or os.getenv('LANGSMITH_PROJECT') or "dream-team-experiments"
+        configure_langsmith(project=project)
 
     # Create execution context with all non-serializable objects
     ctx = ExecutionContext(
@@ -242,9 +257,15 @@ def run_graph_experiment(
     # Create and run graph
     graph = create_experiment_graph(ctx)
 
-    # The graph internally loops via plan → code → execute → evaluate → check → plan
-    # until max iterations or goal achieved
-    final_state = graph.invoke(state)
+    # Run with tracing context
+    experiment_name = f"{state.config.target_metric}_optimization"
+    metadata = create_experiment_metadata(state)
+
+    if enable_tracing and os.getenv('LANGSMITH_API_KEY'):
+        with trace_experiment(experiment_name, metadata=metadata):
+            final_state = graph.invoke(state)
+    else:
+        final_state = graph.invoke(state)
 
     print("\n" + "="*70)
     print("✅ EXPERIMENT COMPLETE")
