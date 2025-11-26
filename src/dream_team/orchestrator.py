@@ -3,6 +3,76 @@ Experiment orchestration for autonomous Dream Team operation.
 
 Coordinates agents, code execution, and iterative improvement.
 Uses mathematical framework for emergent evolution.
+
+## CURRENT FLOW (Pre-LangGraph):
+
+The orchestration follows this lifecycle:
+
+1. **Initialization** (ExperimentOrchestrator.__init__):
+   - Create team lead, coding agent, team members
+   - Initialize EvolutionEngine
+   - Set up executor and research assistant
+
+2. **Bootstrap Phase** (_bootstrap_exploration):
+   - PI explores problem alone with coding agent
+   - Extract column schemas from data
+   - PI recruits team members based on findings
+   - Save bootstrap results to iteration_00_bootstrap.json
+
+3. **Main Iteration Loop** (run method, iterations 1-N):
+   a. Team Planning (_team_planning_meeting):
+      - TeamMeeting with all agents discussing approach
+      - Agents can use ReAct to search papers during discussion
+      - Returns synthesized action plan
+
+   b. Implementation (_implement_approach):
+      - Coding agent translates plan into Python code
+      - Uses ReAct for iterative reasoning
+      - Saves code to results/code/iteration_XX.py
+
+   c. Execution (_execute_with_retry):
+      - Execute code with auto-retry on errors
+      - Auto-install missing packages
+      - If errors, ask coding agent to fix (max_retries=2)
+
+   d. Evaluation (_extract_metrics):
+      - Extract metrics from execution results
+      - Update best_metric tracking
+
+   e. Goal Check (_check_goal_achieved):
+      - Check if target score reached
+      - Exit if goal achieved
+
+   f. Mathematical Evolution Check (_check_mathematical_evolution):
+      - Update agent dynamics (θ, δ based on metric history)
+      - Check if evolution needed via mathematical signals
+      - Returns bool: should_evolve
+
+   g. Team Evolution (_evolve_team):
+      - Research papers related to problem
+      - PI analyzes team composition
+      - Execute evolution plan (NO_CHANGE, ADD, REMOVE, DEEPEN)
+      - Update team composition and agent knowledge
+
+4. **State Persistence**:
+   - Save iteration summaries to iteration_XX.json
+   - Save code to code/iteration_XX.py
+   - Save meeting transcripts to meetings/
+   - Save agent snapshots to agents/
+   - Can resume from checkpoint via _try_resume
+
+5. **Mathematical Framework** (_initialize_mathematical_framework):
+   - Extract problem graph from problem statement
+   - Create Team object for collective dynamics
+   - Initialize agent attention (θ), depth (δ), knowledge (K)
+
+## Key Components to Preserve in Refactor:
+- EvolutionEngine: trigger detection, agent evolution proposals
+- CodeExecutor: safe code execution with retry and auto-install
+- Agent roles and prompts (domain logic intact)
+- Team dynamics: diversity, collective knowledge, contribution tracking
+- Knowledge graph: K, θ, δ, evolution signals
+- Metrics tracking and best_metric optimization
 """
 
 from typing import List, Dict, Any, Optional
