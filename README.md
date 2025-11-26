@@ -42,26 +42,95 @@ Agents operate with full autonomy:
 
 ## Quick Start
 
-### Autonomous Mode (Recommended)
+### Autonomous Experiment (Recommended)
+
+Run a complete autonomous experiment with LangGraph orchestration:
 
 ```bash
+# Quick example with tracing
+python scripts/run_with_tracing.py
+
+# Or run your own experiment
 cd experiments/agentds_food
 python run_autonomous_experiment.py
 ```
 
-Agents autonomously:
-1. Plan approach based on problem
-2. Write and execute code
-3. Analyze results
-4. Evolve when stuck
-5. Iterate until goal achieved
+The graph autonomously:
+1. **Bootstrap**: PI explores problem and recruits specialized team
+2. **Plan**: Team collaborates on approach
+3. **Code**: Generate executable Python code
+4. **Execute**: Run code in safe environment
+5. **Evaluate**: Extract metrics and analyze results
+6. **Evolve**: Adapt team composition when stuck
+7. **Iterate**: Repeat until goal achieved
 
-### API Usage
+### API Usage (LangGraph)
+
+```python
+from dream_team.experiment import (
+    create_initial_state,
+    AgentConfig,
+    run_graph_experiment
+)
+
+# 1. Configure agents
+team_lead = AgentConfig(
+    title="Principal Investigator",
+    expertise="machine learning, experimental design, research methodology",
+    goal="optimize the target metric through systematic experimentation",
+    role="explore problem, recruit team, coordinate research"
+)
+
+coding_agent = AgentConfig(
+    title="Research Engineer",
+    expertise="Python, pandas, scikit-learn, numpy, data analysis",
+    goal="implement research plans accurately",
+    role="translate strategies into executable code"
+)
+
+# 2. Create initial state
+state = create_initial_state(
+    team_lead=team_lead,
+    coding_agent=coding_agent,
+    problem_statement="""
+Predict the target variable using available features.
+Evaluation Metric: MAE (Mean Absolute Error) - lower is better
+Goal: Build a predictive model to minimize MAE.
+""",
+    target_metric="mae",
+    minimize_metric=True,
+    max_iterations=10,
+    results_dir="results/experiment"
+)
+
+# 3. Prepare data
+data_context = {
+    'train_df': train_df,  # Your training data
+    'test_df': test_df     # Your test data
+}
+
+# 4. Run graph with optional LangSmith tracing
+final_state = run_graph_experiment(
+    state,
+    data_context,
+    enable_tracing=True,  # Optional: Full observability in LangSmith
+    langsmith_project="my-experiments"
+)
+
+# 5. Access results
+print(f"Best {final_state.config.target_metric}: {final_state.best_metric}")
+print(f"Iterations: {final_state.iteration}")
+print(f"Team size: {len(final_state.team.team_members) + 1}")
+```
+
+### Component Usage (Advanced)
+
+For direct access to individual components:
 
 ```python
 from dream_team import Agent, TeamMeeting, EvolutionEngine, get_research_assistant
 
-# Create initial team
+# Create agents
 pi = Agent(
     title="Principal Investigator",
     expertise="data science, ML, research strategy",
@@ -69,60 +138,116 @@ pi = Agent(
     role="lead team and make decisions"
 )
 
-data_scientist = Agent(
-    title="Data Scientist",
-    expertise="EDA, feature engineering, statistical modeling",
-    goal="understand data and create features",
-    role="analyze data and propose models"
-)
-
-# Run meeting
+# Run team meeting
 meeting = TeamMeeting(save_dir="results/meetings")
 summary = meeting.run(
     team_lead=pi,
     team_members=[data_scientist],
-    agenda="Predict shelf life for food batches using temperature and humidity data",
+    agenda="Predict shelf life using temperature data",
     num_rounds=2
 )
 
-# Research relevant papers
+# Research papers
 research = get_research_assistant()
 papers = research.research_topic(
-    query="shelf life prediction food storage temperature",
-    context="Predicting remaining shelf life based on storage conditions",
+    query="shelf life prediction food storage",
     num_papers=5
 )
 
-# Evolve agent with new knowledge
+# Evolve agent
 evolution = EvolutionEngine()
 evolution.evolve_agent(
     agent=data_scientist,
-    context={"problem_description": "Shelf life prediction", "error_analysis": {...}},
+    context={"problem": "Shelf life prediction"},
     papers=papers,
-    trigger_reason="Need domain expertise in food science"
+    trigger_reason="Need domain expertise"
 )
-
-# data_scientist is now specialized with paper insights integrated!
 ```
 
 ## Architecture
 
+### LangGraph Orchestration (New)
+
 ```
 src/dream_team/
-├── agent.py           # Agent, KnowledgeBase, Paper classes
-├── llm.py             # Gemini API wrapper
-├── research.py        # Semantic Scholar integration
-├── evolution.py       # Evolution engine and triggers
-├── meetings.py        # Team and individual meetings
-├── executor.py        # Code execution environment
-├── orchestrator.py    # Autonomous experiment orchestration
-└── utils.py           # Helper functions
+├── experiment/              # LangGraph-based orchestration (NEW)
+│   ├── state.py            # ExperimentState, AgentConfig (Pydantic models)
+│   ├── graph_app.py        # Graph construction and runner
+│   ├── nodes.py            # All node implementations
+│   ├── tracing.py          # LangSmith integration
+│   └── __init__.py         # Public API
+├── agent.py                 # Agent, KnowledgeBase, Paper classes
+├── llm.py                   # Gemini API wrapper
+├── research.py              # Semantic Scholar integration
+├── evolution.py             # Evolution engine and triggers
+├── meetings.py              # Team and individual meetings
+├── executor.py              # Code execution environment
+├── orchestrator.py          # (Deprecated - use experiment/ instead)
+└── utils.py                 # Helper functions
+
+scripts/
+├── run_with_tracing.py      # Example with LangSmith tracing
+├── smoke_run.py             # Baseline test
+└── test_graph_skeleton.py   # Graph structure test
+
+tests/
+├── test_nodes.py            # Unit tests for nodes
+└── test_graph_integration.py # Integration tests
 
 experiments/agentds_food/
-├── data/                        # Benchmark data
-├── results/                     # Evolution history, meetings, experiments
-└── run_autonomous_experiment.py # Fully autonomous experiment
+├── data/                    # Benchmark data
+├── results/                 # Evolution history, meetings, experiments
+└── run_autonomous_experiment.py
 ```
+
+**Graph Flow:**
+```
+START → bootstrap → init_math → plan → code → execute → evaluate
+                                  ↑                        ↓
+                                  └── [evolve?] ← check ←─┘
+```
+
+Each node accepts and returns `ExperimentState`, enabling full observability and checkpointing.
+
+### Migration Note
+
+> **Migrating from old API?** See [MIGRATION_GUIDE.md](MIGRATION_GUIDE.md) for step-by-step instructions.
+
+## New Features
+
+### 🔍 LangSmith Tracing
+
+Full observability into experiment execution:
+
+```bash
+export LANGSMITH_API_KEY=your_key
+python scripts/run_with_tracing.py
+```
+
+View traces at https://smith.langchain.com/ to see:
+- Each node execution (bootstrap, plan, code, execute, etc.)
+- Iteration progress and metrics evolution
+- Team composition changes
+- Evolution decisions and triggers
+- Timing for each step
+
+### 📊 Explicit State Management
+
+All experiment state is now explicit and type-safe:
+
+```python
+final_state.iteration        # Current iteration number
+final_state.best_metric      # Best metric achieved
+final_state.team             # Current team composition
+final_state.history          # Complete iteration history
+final_state.evolution        # Evolution state and decisions
+```
+
+The `ExperimentState` Pydantic model provides:
+- Type safety with validation
+- Serializable state for checkpointing
+- Autocomplete support in IDEs
+- Single source of truth
 
 ## Installation
 
