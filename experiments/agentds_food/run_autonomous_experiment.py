@@ -45,9 +45,10 @@ import pandas as pd
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / 'src'))
 
-from dream_team import (
-    Agent,
-    ExperimentOrchestrator
+from dream_team.experiment import (
+    create_initial_state,
+    AgentConfig,
+    run_graph_experiment
 )
 
 
@@ -94,8 +95,8 @@ def main():
     # Create initial setup (PI starts alone)
     print("👥 Initial setup...\n")
 
-    # Principal Investigator starts alone
-    pi = Agent(
+    # Principal Investigator starts alone (will recruit team during bootstrap)
+    pi_config = AgentConfig(
         title="Principal Investigator",
         expertise="machine learning strategy, experimental design, research methodology, research literature review",
         goal="optimize the target metric through systematic experimentation and research-driven decisions",
@@ -103,7 +104,7 @@ def main():
     )
 
     # Coding agent (translates all discussions into code)
-    coding_agent = Agent(
+    coding_config = AgentConfig(
         title="Research Engineer",
         expertise="Python, pandas, scikit-learn, numpy, data analysis, implementation, translating research into code",
         goal="implement research plans accurately and efficiently",
@@ -111,8 +112,8 @@ def main():
     )
 
     print(f"  Starting with:")
-    print(f"    ✅ {pi.title} (will explore and recruit team)")
-    print(f"    ✅ {coding_agent.title} (implementation)")
+    print(f"    ✅ {pi_config.title} (will explore and recruit team)")
+    print(f"    ✅ {coding_config.title} (implementation)")
     print(f"\n  (Team members will be recruited during bootstrap)\n")
 
     # Prepare problem statement
@@ -143,58 +144,61 @@ and iteratively improve your predictions to minimize MAE.
         'regions': regions,
     }
 
-    # Create orchestrator (team_members empty - PI will recruit during bootstrap)
+    # Create initial state (team_members empty - PI will recruit during bootstrap)
     results_dir = Path(__file__).parent / 'results' / 'autonomous_shelf_life'
 
-    orchestrator = ExperimentOrchestrator(
-        team_lead=pi,
-        team_members=[],  # Empty - PI will recruit after exploring
-        coding_agent=coding_agent,
-        results_dir=results_dir
+    state = create_initial_state(
+        team_lead=pi_config,
+        coding_agent=coding_config,
+        problem_statement=problem_statement,
+        target_metric='mae',
+        minimize_metric=True,
+        max_iterations=5,
+        goal_target=None,  # No specific target, just minimize
+        results_dir=str(results_dir)
     )
 
-    # Run autonomous experiment
-    print("🚀 Starting autonomous experiment...\n")
+    # Run autonomous experiment with new LangGraph architecture
+    print("🚀 Starting autonomous experiment with LangGraph...\n")
     print("The workflow:")
     print("  Bootstrap:")
     print("    1. PI explores problem and data alone")
     print("    2. PI recruits team based on what they learned")
     print("  Main iterations:")
-    print("    3. Strategy team discusses what to implement")
+    print("    3. Strategy team discusses what to implement (multi-step ReAct)")
     print("    4. Research Engineer translates discussion into code")
     print("    5. Execute and analyze results")
     print("    6. Evolve when stuck")
     print("    7. Iterate until goal achieved\n")
 
-    final_results = orchestrator.run(
-        problem_statement=problem_statement,
-        data_context=data_context,
-        target_metric='mae',
-        minimize_metric=True,
-        max_iterations=5,
-        target_score=None  # No specific target, just minimize
+    final_state = run_graph_experiment(
+        state,
+        data_context,
+        enable_tracing=False  # Set to True if you have LANGSMITH_API_KEY
     )
 
     # Print summary
     print("\n" + "="*70)
     print("FINAL SUMMARY")
     print("="*70)
-    print(f"\nIterations completed: {final_results['total_iterations']}")
-    print(f"Best MAE achieved: {final_results['best_metric']:.4f}")
+    print(f"\nIterations completed: {final_state.iteration}")
+    print(f"Best MAE achieved: {final_state.best_metric:.4f}" if final_state.best_metric else "\nNo successful iterations")
+    print(f"Best iteration: {final_state.best_iteration}" if final_state.best_iteration else "")
 
-    print(f"\nFinal Team:")
-    for agent_info in final_results['final_team']:
-        print(f"  - {agent_info['title']}")
-        print(f"    Expertise: {agent_info['expertise'][:80]}...")
-        print(f"    Specialization: {agent_info['specialization_depth']}")
+    print(f"\nFinal Team ({len(final_state.team.team_members) + 1} members):")
+    print(f"  - {final_state.team.team_lead.title} (Lead)")
+    print(f"    Expertise: {final_state.team.team_lead.expertise[:80]}...")
+    for member in final_state.team.team_members:
+        print(f"  - {member.title}")
+        print(f"    Expertise: {member.expertise[:80]}...")
+    print(f"  - {final_state.team.coding_agent.title} (Implementation)")
+    print(f"    Expertise: {final_state.team.coding_agent.expertise[:80]}...")
 
     print(f"\nAll results saved to: {results_dir}")
     print("\nFiles created:")
     print(f"  - Iteration logs: {results_dir}/iteration_*.json")
     print(f"  - Generated code: {results_dir}/code/")
     print(f"  - Meeting transcripts: {results_dir}/meetings/")
-    print(f"  - Agent snapshots: {results_dir}/agents/")
-    print(f"  - Final summary: {results_dir}/final_summary.json")
 
     print("\n" + "="*70)
     print("✅ AUTONOMOUS EXPERIMENT COMPLETE")
