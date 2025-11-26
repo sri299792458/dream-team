@@ -747,6 +747,29 @@ Output ONLY Python code in ```python blocks.
     return code_node
 
 
+def _refresh_column_schemas(ctx: ExecutionContext, state: ExperimentState):
+    """
+    Refresh column schemas from current executor state.
+
+    This captures any new DataFrames created during execution
+    (e.g., engineered features, transformed data).
+    """
+    import pandas as pd
+
+    for key, value in ctx.executor.data_context.items():
+        if isinstance(value, pd.DataFrame):
+            cols = list(value.columns)
+
+            # Check if this is new or changed
+            if key not in state.column_schemas:
+                print(f"   📋 New DataFrame detected: {key} ({len(cols)} columns)")
+                state.column_schemas[key] = cols
+            elif state.column_schemas[key] != cols:
+                old_count = len(state.column_schemas[key])
+                print(f"   📋 DataFrame updated: {key} ({old_count} → {len(cols)} columns)")
+                state.column_schemas[key] = cols
+
+
 def create_execute_node(ctx: ExecutionContext):
     """Create execute node with access to execution context"""
 
@@ -761,6 +784,7 @@ def create_execute_node(ctx: ExecutionContext):
         max_retries = 2
         current_code = state.current_code
         attempt = 0
+        fix_attempts = []  # Track what fixes were attempted
 
         while attempt <= max_retries:
             if attempt > 0:
@@ -776,6 +800,9 @@ def create_execute_node(ctx: ExecutionContext):
             if result['success']:
                 if attempt > 0:
                     print(f"   ✅ Fixed after {attempt} attempt(s)!\n")
+
+                # Refresh column schemas from executor state
+                _refresh_column_schemas(ctx, state)
 
                 state.current_results = {
                     'success': result['success'],
@@ -800,13 +827,23 @@ def create_execute_node(ctx: ExecutionContext):
             if attempt < max_retries:
                 print(f"   ❌ Error: {result['error']}")
                 print(f"   🔧 Asking agent to fix...\n")
-                current_code = _fix_code_error(
+
+                # Pass fix history to the fixer
+                current_code, fix_description = _fix_code_error_with_history(
                     ctx=ctx,
                     state=state,
                     failed_code=current_code,
                     error=result['error'],
-                    traceback=result.get('traceback', '')
+                    traceback=result.get('traceback', ''),
+                    previous_attempts=fix_attempts
                 )
+
+                # Record this attempt
+                fix_attempts.append({
+                    'attempt': attempt + 1,
+                    'error': result['error'][:200],
+                    'fix_description': fix_description
+                })
 
                 # Save retry code
                 code_file = ctx.results_dir / 'code' / f'iteration_{state.iteration + 1:02d}_retry_{attempt+1}.py'
@@ -831,8 +868,27 @@ def create_execute_node(ctx: ExecutionContext):
     return execute_node
 
 
-def _fix_code_error(ctx: ExecutionContext, state: ExperimentState, failed_code: str, error: str, traceback: str) -> str:
-    """Helper to ask coding agent to fix failed code"""
+def _fix_code_error_with_history(
+    ctx: ExecutionContext,
+    state: ExperimentState,
+    failed_code: str,
+    error: str,
+    traceback: str,
+    previous_attempts: list
+) -> tuple[str, str]:
+    """
+    Ask coding agent to fix failed code, providing history of previous fix attempts.
+
+    Returns: (fixed_code, description_of_fix)
+    """
+    # Build previous attempts context
+    attempts_context = ""
+    if previous_attempts:
+        attempts_context = "\n## PREVIOUS FIX ATTEMPTS (DO NOT REPEAT THESE):\n"
+        for att in previous_attempts:
+            attempts_context += f"- Attempt {att['attempt']}: Tried to fix '{att['error'][:100]}'\n"
+            attempts_context += f"  What was tried: {att['fix_description']}\n"
+        attempts_context += "\n**You MUST try something DIFFERENT from the above attempts.**\n"
 
     # Previous output context
     previous_output_context = ""
@@ -872,6 +928,8 @@ Your code failed with an error. Fix it.
 ## Traceback
 {traceback}
 
+{attempts_context}
+
 ## Available in execution context:
 - Pre-imported libraries: pandas, numpy, torch, pathlib
 - Variables: {list(ctx.data_context.keys())}
@@ -881,6 +939,8 @@ Your code failed with an error. Fix it.
 {previous_output_context}
 ## Task
 The error shows EXACTLY what's wrong. Read the traceback line number.
+
+**IMPORTANT**: {f"You already tried {len(previous_attempts)} fix(es) that didn't work. Try something FUNDAMENTALLY DIFFERENT." if previous_attempts else ""}
 
 **For NameError `'X' is not defined`:**
 1. Look at the line number
@@ -892,7 +952,8 @@ The error shows EXACTLY what's wrong. Read the traceback line number.
 
 **DO NOT output the same code again. Actually fix the specific line that failed.**
 
-Output ONLY the FIXED Python code in ```python blocks.
+Before outputting code, briefly describe what you're changing (1 sentence).
+Then output ONLY the FIXED Python code in ```python blocks.
 """
 
     meeting = IndividualMeeting(save_dir=str(ctx.results_dir / 'meetings'))
@@ -902,7 +963,15 @@ Output ONLY the FIXED Python code in ```python blocks.
         num_iterations=1
     )
 
-    return extract_code_from_text(code_output)
+    # Extract fix description (first line before code block)
+    lines = code_output.split('\n')
+    fix_description = ""
+    for line in lines:
+        if line.strip() and not line.strip().startswith('```'):
+            fix_description = line.strip()
+            break
+
+    return extract_code_from_text(code_output), fix_description
 
 
 def _update_agent_knowledge(ctx: ExecutionContext, state: ExperimentState):
