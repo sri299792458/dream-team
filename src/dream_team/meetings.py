@@ -321,7 +321,7 @@ Provide in JSON format:
             for msg in recent
         ])
 
-    def _react_proposal(self, agent, agenda: str, context: str, temperature: float, max_steps: int = 1) -> str:
+    def _react_proposal(self, agent, agenda: str, context: str, temperature: float, max_steps: int = 3) -> str:
         """
         ReAct loop: agent reasons and acts iteratively before final proposal.
 
@@ -341,15 +341,13 @@ Provide in JSON format:
 
         for step in range(max_steps):
             # Thought: Agent proposes something from their expertise
-            thought_prompt = f"""You are {agent.title} preparing for a team meeting.
+            if step == 0:
+                thought_prompt = f"""You are {agent.title} preparing for a team meeting.
 
 Agenda: {agenda}
 
 Discussion so far:
 {context}
-
-{"Previous reasoning:" if react_history else ""}
-{self._format_react_history(react_history)}
 
 Based on YOUR EXPERTISE and knowledge of machine learning, what do you think would be a good approach for this problem?
 Think about what you would propose, then identify what you'd want to search for to find supporting research.
@@ -357,6 +355,31 @@ Think about what you would propose, then identify what you'd want to search for 
 Output format:
 Thought: [What I'm proposing based on my expertise and why]
 Action: Search papers on "[2-4 word search query]" to find supporting evidence
+
+Be concise. Only output Thought and Action.
+"""
+            else:
+                # IMPORTANT: Reference previous observation to refine thinking
+                thought_prompt = f"""You are {agent.title} refining your proposal for a team meeting.
+
+Agenda: {agenda}
+
+Discussion so far:
+{context}
+
+Your previous reasoning:
+{self._format_react_history(react_history)}
+
+Based on what you learned from the papers, refine your thinking:
+- Did the papers support your idea? Contradict it? Suggest modifications?
+- What additional evidence would strengthen your proposal?
+- Should you search for something different?
+
+Output format:
+Thought: [Your refined thinking based on what you learned]
+Action: Search papers on "[2-4 word search query]" OR Action: Finalize proposal
+
+If you have enough evidence, use "Action: Finalize proposal" to stop searching.
 
 Be concise. Only output Thought and Action.
 """
@@ -388,6 +411,11 @@ Be concise. Only output Thought and Action.
 
             if not search_query:
                 break  # Stop if can't parse
+
+            # Check for early termination when agent has enough evidence
+            if "finalize" in search_query.lower() or "stop" in search_query.lower():
+                print(f"      Step {step+1}: Agent ready to finalize")
+                break
 
             print(f"      Step {step+1} Thought: {thought[:80]}...")
             print(f"      Step {step+1} Action: Search '{search_query}'")
@@ -455,15 +483,15 @@ Keep it focused (1-2 paragraphs).
             if len(search_query) > 50:
                 search_query = search_query[:50]
 
-            # Search
+            # Search with wider year range to include seminal papers
             raw_results = self.research_api.search(
                 query=search_query,
                 limit=5,
-                year_range=(2018, 2025)
+                year_range=(2015, 2025)
             )
 
             if not raw_results:
-                return "No relevant papers found."
+                return f"No papers found for '{search_query}'. Consider: (1) broader terms, (2) different phrasing, (3) related concepts."
 
             # Get existing papers
             existing_titles = [p.title for p in agent.knowledge_base.papers]
@@ -514,7 +542,7 @@ Focus on methods, findings, or techniques that could be applied."""
             return observation
 
         except Exception as e:
-            return f"Search failed: {e}"
+            return f"Search failed: {e}. Consider proceeding with your expertise or trying a different query."
 
     def _search_papers_to_verify(self, agent, draft_proposal: str):
         """Search for papers to verify/support agent's draft proposal"""
@@ -672,7 +700,7 @@ Output ONLY the code in ```python blocks.
 
         return final_output
 
-    def _react_individual_task(self, agent, task: str, temperature: float, max_steps: int = 2) -> str:
+    def _react_individual_task(self, agent, task: str, temperature: float, max_steps: int = 3) -> str:
         """
         ReAct loop for individual task: agent reasons and searches papers before final output.
 
@@ -796,15 +824,15 @@ Be specific, detailed, and actionable.
             if len(search_query) > 50:
                 search_query = search_query[:50]
 
-            # Search
+            # Search with wider year range to include seminal papers
             raw_results = self.research_api.search(
                 query=search_query,
                 limit=5,
-                year_range=(2018, 2025)
+                year_range=(2015, 2025)
             )
 
             if not raw_results:
-                return "No relevant papers found."
+                return f"No papers found for '{search_query}'. Consider: (1) broader terms, (2) different phrasing, (3) related concepts."
 
             # Get existing papers
             existing_titles = [p.title for p in agent.knowledge_base.papers]
@@ -854,7 +882,7 @@ Focus on methods, findings, or techniques that could be applied."""
             return observation
 
         except Exception as e:
-            return f"Search failed: {e}"
+            return f"Search failed: {e}. Consider proceeding with your expertise or trying a different query."
 
     def run(
         self,

@@ -16,6 +16,9 @@ dependencies = [
     "notebook",
     "requests",
     "google-generativeai",
+    "langgraph>=0.2.0",
+    "langsmith>=0.1.0",
+    "pydantic>=2.0.0",
 ]
 classifiers = [
     "Programming Language :: Python :: 3",

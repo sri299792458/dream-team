@@ -51,6 +51,31 @@ class SemanticScholarAPI:
         # With key: Higher limits, but still respect 1 req/sec minimum
         self.rate_limit_delay = 1.0  # Seconds between requests
 
+        # Simple in-memory cache to avoid redundant API calls
+        self._cache: Dict[str, List[PaperResult]] = {}
+        self._cache_timestamps: Dict[str, float] = {}
+        self._cache_ttl = 3600  # 1 hour TTL
+
+    def _get_cache_key(self, query: str, limit: int, year_range: Optional[tuple]) -> str:
+        """Generate cache key from search parameters"""
+        year_str = f"{year_range[0]}-{year_range[1]}" if year_range else "none"
+        return f"{query.lower().strip()}|{limit}|{year_str}"
+
+    def _is_cache_valid(self, cache_key: str) -> bool:
+        """Check if cached result is still valid"""
+        if cache_key not in self._cache:
+            return False
+        if cache_key not in self._cache_timestamps:
+            return False
+
+        age = time.time() - self._cache_timestamps[cache_key]
+        return age < self._cache_ttl
+
+    def clear_cache(self):
+        """Clear the search cache"""
+        self._cache.clear()
+        self._cache_timestamps.clear()
+
     def search(
         self,
         query: str,
@@ -58,7 +83,13 @@ class SemanticScholarAPI:
         year_range: Optional[tuple] = None,
         fields: List[str] = None
     ) -> List[PaperResult]:
-        """Search for papers"""
+        """Search for papers with caching"""
+
+        # Check cache first
+        cache_key = self._get_cache_key(query, limit, year_range)
+        if self._is_cache_valid(cache_key):
+            print(f"   📦 Cache hit for '{query[:30]}...'")
+            return self._cache[cache_key]
 
         if fields is None:
             fields = ["paperId", "title", "authors", "year", "abstract",
@@ -109,6 +140,12 @@ class SemanticScholarAPI:
                         influential_citation_count=paper_data.get("influentialCitationCount", 0),
                         url=paper_data.get("url", "")
                     ))
+
+                # Cache results before returning
+                if results:
+                    self._cache[cache_key] = results
+                    self._cache_timestamps[cache_key] = time.time()
+                    print(f"   📦 Cached {len(results)} results for '{query[:30]}...'")
 
                 return results
 
