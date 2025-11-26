@@ -437,5 +437,793 @@ Only output the agent specifications, nothing else.
     return agents
 
 
-# TODO: Continue implementing other nodes (plan, code, execute, evaluate, evolve)
-# This would be continued in the actual implementation...
+def create_init_math_framework_node(ctx: ExecutionContext):
+    """Create init math framework node with access to execution context"""
+
+    def init_math_framework_node(state: ExperimentState) -> ExperimentState:
+        """
+        Initialize mathematical framework for the experiment.
+
+        Migrated from ExperimentOrchestrator._initialize_mathematical_framework
+        """
+        print("\n🧮 Initializing mathematical framework...")
+
+        # Extract problem as knowledge graph
+        problem_text = f"{state.config.problem_statement} Target metric: {state.config.target_metric}"
+        concepts = extract_concepts_from_text(problem_text, use_llm=False)
+
+        # Create problem graph
+        ctx.problem_graph = KnowledgeGraph()
+
+        # Add domain-specific concepts
+        important_concepts = {
+            'regression', 'classification', 'prediction', 'forecasting',
+            'optimization', 'machine_learning', 'deep_learning',
+            'gradient_boosting', 'neural_network', 'feature_engineering',
+            state.config.target_metric.lower().replace('_', ' ')
+        }
+
+        all_concepts = concepts | important_concepts
+
+        for concept in all_concepts:
+            if concept.lower() in state.config.problem_statement.lower():
+                importance = 2.0
+            elif concept == state.config.target_metric.lower().replace('_', ' '):
+                importance = 3.0
+            else:
+                importance = 1.0
+
+            ctx.problem_graph.add_concept(concept, importance=importance)
+
+        print(f"   ✓ Problem graph: {len(ctx.problem_graph.concepts)} concepts")
+
+        # Store concepts in state
+        state.mathematical_state.problem_concepts = list(ctx.problem_graph.concepts)
+
+        # Create team object
+        ctx.team = Team(ctx.all_agents)
+        print(f"   ✓ Team initialized: {len(ctx.team.agents)} agents")
+
+        # Compute initial diversity
+        diversity = ctx.team.compute_diversity()
+        state.mathematical_state.team_diversity = diversity
+        print(f"   ✓ Team diversity: {diversity:.3f}")
+
+        state.phase = "plan"
+        return state
+
+    return init_math_framework_node
+
+
+def create_plan_node(ctx: ExecutionContext):
+    """Create plan node with access to execution context"""
+
+    def plan_node(state: ExperimentState) -> ExperimentState:
+        """
+        Team planning meeting to decide approach.
+
+        Migrated from ExperimentOrchestrator._team_planning_meeting
+        """
+        print("\n👥 Team planning meeting...\n")
+
+        # Build history context
+        history_context = ""
+        if state.history:
+            last = state.history[-1]
+
+            # Build output preview
+            output_preview = ""
+            if last.results and last.results.get('output'):
+                output = last.results['output']
+                if last.iteration == 0:  # Bootstrap
+                    preview_len = min(3000, len(output))
+                    output_preview = f"\n\nBootstrap Exploration Output (first {preview_len} chars):\n```\n{output[:preview_len]}\n```"
+                else:
+                    preview_len = min(15000, len(output))
+                    if len(output) > 15000:
+                        output_preview = f"\n\nPrevious Iteration Output (last {preview_len} chars):\n```\n...{output[-preview_len:]}\n```"
+                    else:
+                        output_preview = f"\n\nPrevious Iteration Output:\n```\n{output}\n```"
+
+            # Build iteration history summary
+            history_summary = ""
+            if len(state.history) > 1:
+                history_summary = "\n## Iteration History:\n"
+                recent_iters = [h for h in state.history if h.iteration > 0][-3:]
+                for hist in recent_iters:
+                    approach_summary = (hist.approach[:150] + "...") if hist.approach and len(hist.approach) > 150 else (hist.approach or "")
+                    history_summary += f"- Iteration {hist.iteration}: {hist.metrics}\n  Approach: {approach_summary}\n"
+
+                if state.best_metric is not None:
+                    history_summary += f"\n**Best metric so far**: {state.best_metric}\n"
+
+            approach_preview = (last.approach[:200] + "...") if last.approach and len(last.approach) > 200 else (last.approach or "")
+            history_context = f"{history_summary}\n## Previous Iteration Results:\nApproach: {approach_preview}\nMetrics: {last.metrics}\n{output_preview}\n"
+
+        # Column schemas
+        columns_summary = ""
+        if state.column_schemas:
+            columns_summary = "\n## AVAILABLE COLUMNS (ONLY use these exact column names):\n"
+            for df_name, cols in state.column_schemas.items():
+                columns_summary += f"\n{df_name}: {cols}\n"
+
+        agenda = f"""
+**BE CONCISE.**
+
+## Problem:
+{state.config.problem_statement}
+
+## Available Dataframes:
+{list(ctx.data_context.keys())}
+{columns_summary}
+{history_context}
+
+## Roles:
+- **Team Members**: Review previous results, then propose what to do next (use ReAct to search papers)
+- **Lead**: Synthesize team's analysis into clear decisions
+
+## Task:
+Team members:
+1. Review the previous iteration - what worked? what failed?
+2. Propose what to implement next (2-3 sentences). Use ONLY the columns listed above.
+
+Lead: Synthesize into a decisive action plan.
+"""
+
+        meeting = TeamMeeting(
+            save_dir=str(ctx.results_dir / 'meetings'),
+            research_api=ctx.research_api
+        )
+        summary = meeting.run(
+            team_lead=ctx.team_lead,
+            team_members=ctx.team_members,
+            agenda=agenda,
+            num_rounds=1
+        )
+
+        # Save meeting transcript
+        meeting.save(f'iteration_{state.iteration + 1:02d}_team_meeting.json')
+
+        # Extract summary text
+        summary_text = summary.get('summary', '') if isinstance(summary, dict) else str(summary)
+
+        print("\n📝 TEAM SYNTHESIS:")
+        preview = summary_text[:200] + "..." if len(summary_text) > 200 else summary_text
+        print(f"   {preview}\n")
+
+        state.current_approach = summary_text
+        state.phase = "code"
+        return state
+
+    return plan_node
+
+
+def create_code_node(ctx: ExecutionContext):
+    """Create code node with access to execution context"""
+
+    def code_node(state: ExperimentState) -> ExperimentState:
+        """
+        Coding agent implements the planned approach.
+
+        Migrated from ExperimentOrchestrator._implement_approach
+        """
+        print(f"💻 {ctx.coding_agent.title} implementing approach...\n")
+
+        # Build previous output context
+        previous_output_context = ""
+        if state.history:
+            last = state.history[-1]
+            if last.results and last.results.get('output'):
+                output = last.results['output']
+                if last.iteration == 0:
+                    preview_len = min(3000, len(output))
+                    previous_output_context = f"\n## Bootstrap Exploration Output (first {preview_len} chars):\n```\n{output[:preview_len]}\n```\n"
+                else:
+                    preview_len = min(15000, len(output))
+                    if len(output) > 15000:
+                        previous_output_context = f"\n## Previous Iteration Output (last {preview_len} chars):\n```\n...{output[-preview_len:]}\n```\n"
+                    else:
+                        previous_output_context = f"\n## Previous Iteration Output:\n```\n{output}\n```\n"
+
+        # Column schemas
+        schema_info = ""
+        if state.column_schemas:
+            schema_info = "\n## DataFrame Schemas (use EXACT column names):\n"
+            for df_name, cols in state.column_schemas.items():
+                schema_info += f"{df_name}: {cols}\n"
+
+        task = f"""
+Implement the team's plan.
+
+## Team's Plan:
+{state.current_approach}
+
+## Available dataframes:
+{list(ctx.data_context.keys())}
+{schema_info}
+{previous_output_context}
+## Available in execution context:
+- Pre-imported libraries: pandas (pd), numpy (np), torch
+
+## Requirements:
+- Write complete, executable code
+- Use EXACT column names from DataFrame Schemas above
+- If training/evaluating a model, compute {state.config.target_metric.upper()} and store it in a variable
+- Print important outputs: metrics, feature importance, model summaries
+- Save trained models if training took long
+- Suppress verbose output: warnings.filterwarnings('ignore'), use verbose=0 or verbose=-1
+
+Output ONLY Python code in ```python blocks.
+"""
+
+        meeting = IndividualMeeting(save_dir=str(ctx.results_dir / 'meetings'))
+        code_output = meeting.run(
+            agent=ctx.coding_agent,
+            task=task,
+            num_iterations=1,
+            use_react_coding=True
+        )
+
+        # Save coding meeting
+        meeting.save(f'iteration_{state.iteration + 1:02d}_coding.json')
+
+        # Extract code
+        code = extract_code_from_text(code_output)
+
+        # Save code
+        code_file = ctx.results_dir / 'code' / f'iteration_{state.iteration + 1:02d}.py'
+        code_file.parent.mkdir(exist_ok=True)
+        code_file.write_text(code)
+
+        print(f"   Generated {len(code.split(chr(10)))} lines")
+        print(f"   Saved to: {code_file}\n")
+
+        state.current_code = code
+        state.phase = "execute"
+        return state
+
+    return code_node
+
+
+def create_execute_node(ctx: ExecutionContext):
+    """Create execute node with access to execution context"""
+
+    def execute_node(state: ExperimentState) -> ExperimentState:
+        """
+        Execute the generated code with retry.
+
+        Migrated from ExperimentOrchestrator._execute_with_retry
+        """
+        print("⚙️  Executing implementation...\n")
+
+        max_retries = 2
+        current_code = state.current_code
+        attempt = 0
+
+        while attempt <= max_retries:
+            if attempt > 0:
+                print(f"   🔄 Retry attempt {attempt}/{max_retries}\n")
+
+            # Execute code
+            result = ctx.executor.execute(
+                code=current_code,
+                description=f"Iteration {state.iteration + 1} implementation"
+            )
+
+            # If successful, save and return
+            if result['success']:
+                if attempt > 0:
+                    print(f"   ✅ Fixed after {attempt} attempt(s)!\n")
+
+                state.current_results = {
+                    'success': result['success'],
+                    'output': result['output'],
+                    'error': result.get('error'),
+                    'traceback': result.get('traceback'),
+                    'code': current_code,
+                    'description': state.current_approach or ''
+                }
+                state.phase = "evaluate"
+                return state
+
+            # Check for missing package
+            if 'missing_package' in result:
+                package = result['missing_package']
+                print(f"   📦 Missing package: {package}")
+                if ctx.executor._install_package(package):
+                    print(f"   🔄 Retrying after installing {package}...\n")
+                    continue
+
+            # If failed and we have retries left, ask agent to fix
+            if attempt < max_retries:
+                print(f"   ❌ Error: {result['error']}")
+                print(f"   🔧 Asking agent to fix...\n")
+                current_code = _fix_code_error(
+                    ctx=ctx,
+                    state=state,
+                    failed_code=current_code,
+                    error=result['error'],
+                    traceback=result.get('traceback', '')
+                )
+
+                # Save retry code
+                code_file = ctx.results_dir / 'code' / f'iteration_{state.iteration + 1:02d}_retry_{attempt+1}.py'
+                code_file.parent.mkdir(exist_ok=True)
+                code_file.write_text(current_code)
+
+            attempt += 1
+
+        # Max retries exhausted
+        print(f"   ⚠️  Max retries ({max_retries}) exhausted. Moving on with failure.\n")
+        state.current_results = {
+            'success': False,
+            'output': result.get('output', ''),
+            'error': result.get('error'),
+            'traceback': result.get('traceback'),
+            'code': current_code,
+            'description': state.current_approach or ''
+        }
+        state.phase = "evaluate"
+        return state
+
+    return execute_node
+
+
+def _fix_code_error(ctx: ExecutionContext, state: ExperimentState, failed_code: str, error: str, traceback: str) -> str:
+    """Helper to ask coding agent to fix failed code"""
+
+    # Previous output context
+    previous_output_context = ""
+    if state.history:
+        last = state.history[-1]
+        if last.results and last.results.get('output'):
+            output = last.results['output']
+            preview_len = min(15000, len(output))
+            if len(output) > 15000:
+                previous_output_context = f"\n## Previous Iteration Output (last {preview_len} chars):\n```\n...{output[-preview_len:]}\n```\n"
+            else:
+                previous_output_context = f"\n## Previous Iteration Output:\n```\n{output}\n```\n"
+
+    # Column schemas
+    schema_str = ""
+    if state.column_schemas:
+        for df_name, cols in state.column_schemas.items():
+            schema_str += f"{df_name}: {cols}\n"
+
+    task = f"""
+Your code failed with an error. Fix it.
+
+## Original Approach
+{state.current_approach}
+
+## Problem Statement (for reference):
+{state.config.problem_statement}
+
+## Your Code That Failed
+```python
+{failed_code}
+```
+
+## Error
+{error}
+
+## Traceback
+{traceback}
+
+## Available in execution context:
+- Pre-imported libraries: pandas, numpy, torch, pathlib
+- Variables: {list(ctx.data_context.keys())}
+
+## DataFrame Schemas (use EXACT column names):
+{schema_str}
+{previous_output_context}
+## Task
+The error shows EXACTLY what's wrong. Read the traceback line number.
+
+**For NameError `'X' is not defined`:**
+1. Look at the line number
+2. Find where you used variable `X` without defining it
+3. Either define `X = ...` BEFORE that line, or remove the usage
+
+**For KeyError (column doesn't exist):**
+- Check the DataFrame Schemas above for the EXACT column name
+
+**DO NOT output the same code again. Actually fix the specific line that failed.**
+
+Output ONLY the FIXED Python code in ```python blocks.
+"""
+
+    meeting = IndividualMeeting(save_dir=str(ctx.results_dir / 'meetings'))
+    code_output = meeting.run(
+        agent=ctx.coding_agent,
+        task=task,
+        num_iterations=1
+    )
+
+    return extract_code_from_text(code_output)
+
+
+def create_evaluate_node(ctx: ExecutionContext):
+    """Create evaluate node with access to execution context"""
+
+    def evaluate_node(state: ExperimentState) -> ExperimentState:
+        """
+        Evaluate execution results and extract metrics.
+
+        Migrated from ExperimentOrchestrator._extract_metrics
+        """
+        print(f"\n📊 Evaluating iteration {state.iteration + 1}...\n")
+
+        # Extract metrics from execution results
+        import numpy as np
+
+        raw_metrics = {}
+        if state.current_results and state.current_results.get('success'):
+            # Get metrics from executor variables
+            variables = ctx.executor.data_context
+
+            # Look for target metric
+            target_metric = state.config.target_metric
+            metric_names = ['mae', 'rmse', 'f1', 'accuracy', 'score', 'cv_scores', 'error']
+
+            for key, value in variables.items():
+                # Check if this matches our target metric
+                if target_metric.lower() in key.lower():
+                    try:
+                        if isinstance(value, (int, float, np.integer, np.floating)):
+                            raw_metrics[target_metric] = float(value)
+                        elif isinstance(value, (list, np.ndarray)):
+                            raw_metrics[target_metric] = float(np.mean(value))
+                    except:
+                        pass
+
+                # Also collect other metrics
+                for metric_name in metric_names:
+                    if metric_name in key.lower():
+                        try:
+                            if isinstance(value, (int, float, np.integer, np.floating)):
+                                raw_metrics[key] = float(value)
+                            elif isinstance(value, (list, np.ndarray)):
+                                raw_metrics[key] = float(np.mean(value))
+                        except:
+                            pass
+
+        state.current_metrics = raw_metrics
+
+        # Update best metric
+        is_new_best = state.update_best_metric()
+        if is_new_best:
+            print(f"   ✨ New best {state.config.target_metric}: {state.best_metric:.4f}")
+
+        # Print iteration summary
+        print(f"\n{'='*60}")
+        print(f"ITERATION {state.iteration + 1} SUMMARY")
+        print(f"{'='*60}")
+        print(f"Status: {'✅ Success' if state.current_results.get('success') else '❌ Failed'}")
+        if state.current_metrics:
+            for k, v in state.current_metrics.items():
+                print(f"{k}: {v:.4f}" if isinstance(v, float) else f"{k}: {v}")
+        else:
+            print("No metrics extracted")
+        if state.best_metric is not None:
+            print(f"Best {state.config.target_metric} so far: {state.best_metric:.4f}")
+        print(f"{'='*60}\n")
+
+        # Save iteration summary
+        summary = state.get_iteration_summary()
+        summary.iteration = state.iteration + 1  # Set to next iteration number
+        state.history.append(summary)
+
+        save_json(
+            summary.model_dump(),
+            ctx.results_dir / f'iteration_{state.iteration + 1:02d}.json'
+        )
+
+        # Increment iteration counter
+        state.iteration += 1
+
+        state.phase = "check_continue"
+        return state
+
+    return evaluate_node
+
+
+def create_check_evolution_node(ctx: ExecutionContext):
+    """Create check evolution node with access to execution context"""
+
+    def check_evolution_node(state: ExperimentState) -> ExperimentState:
+        """
+        Check if team evolution is needed.
+
+        Migrated from ExperimentOrchestrator._check_mathematical_evolution
+        """
+        print("\n📊 Checking for evolution signals...\n")
+
+        if len(state.history) < 3:
+            print("   ℹ️  Not enough history for evolution check")
+            state.evolution.triggered = False
+            state.phase = "plan"
+            return state
+
+        # Build metric history
+        metric_history = []
+        for h in state.history:
+            if state.config.target_metric in h.metrics:
+                metric_history.append(h.metrics[state.config.target_metric])
+            else:
+                metric_history.append(float('inf') if state.config.minimize_metric else float('-inf'))
+
+        # Update agent dynamics
+        if ctx.team and ctx.problem_graph:
+            # Compute learning quality
+            if len(metric_history) >= 2:
+                recent_improvement = metric_history[-2] - metric_history[-1] if state.config.minimize_metric else metric_history[-1] - metric_history[-2]
+
+                if recent_improvement > 0:
+                    base_quality = 0.8
+                elif abs(recent_improvement) < 0.01:
+                    base_quality = 0.5
+                else:
+                    base_quality = 0.3
+
+                learning_quality = {
+                    concept: base_quality
+                    for concept in ctx.problem_graph.concepts
+                }
+
+                # Update all agents' dynamics
+                ctx.team.update_all_dynamics(
+                    problem=ctx.problem_graph,
+                    learning_quality=learning_quality,
+                    dt=0.1
+                )
+
+            # Get team state
+            team_state = ctx.team.diagnose_state(metric_history, minimize=state.config.minimize_metric)
+            diversity = ctx.team.compute_diversity()
+
+            print(f"   Team state: {team_state}")
+            print(f"   Team diversity: {diversity:.3f}")
+
+            # Update mathematical state
+            state.mathematical_state.team_diversity = diversity
+            state.mathematical_state.iteration_count = ctx.team.iteration
+
+            # Check for evolution signals
+            evolution_signals = []
+            for agent in ctx.all_agents:
+                should_evolve, evo_type = agent.should_evolve(ctx.problem_graph, ctx.team)
+                if should_evolve:
+                    evolution_signals.append((agent, evo_type))
+                    gini = agent.δ.gini_coefficient()
+                    effectiveness = agent.contribution_effectiveness()
+                    print(f"   🔔 {agent.title}: {evo_type} (gini={gini:.2f}, eff={effectiveness:.2f})")
+
+            # Trigger evolution if needed
+            if evolution_signals or team_state in ["REFRAMING", "EXPLORATION"]:
+                print(f"\n🔔 Evolution triggered")
+                state.evolution.triggered = True
+                state.evolution.trigger_names = [name for _, name in evolution_signals]
+                if team_state in ["REFRAMING", "EXPLORATION"]:
+                    state.evolution.trigger_names.append(f"TEAM_{team_state}")
+                state.phase = "evolve"
+            else:
+                print("   ✓ No evolution needed")
+                state.evolution.triggered = False
+                state.phase = "plan"
+
+        else:
+            # Fallback to simple plateau detection
+            should_evolve = state.should_evolve()
+            if should_evolve:
+                print("   🔔 Evolution triggered (plateau detected)")
+                state.evolution.triggered = True
+                state.evolution.trigger_names = ["PLATEAU"]
+                state.phase = "evolve"
+            else:
+                print("   ✓ No evolution needed")
+                state.evolution.triggered = False
+                state.phase = "plan"
+
+        return state
+
+    return check_evolution_node
+
+
+def create_evolve_node(ctx: ExecutionContext):
+    """Create evolve node with access to execution context"""
+
+    def evolve_node(state: ExperimentState) -> ExperimentState:
+        """
+        Evolve team composition based on performance.
+
+        Migrated from ExperimentOrchestrator._evolve_team
+        """
+        print("\n🧬 Evolving team composition...\n")
+
+        # Research papers
+        print("📚 Researching latest approaches...\n")
+        papers_summary = ""
+        try:
+            from ..llm import get_llm
+            llm = get_llm()
+
+            query_prompt = f"""
+Extract 2-3 key academic search terms from this problem for searching research papers.
+
+Problem: {state.config.problem_statement[:300]}
+
+Output ONLY the search query (2-5 words, academic terminology, no quotes).
+Examples: "shelf life prediction", "gradient boosting regression"
+"""
+            search_query = llm.generate(query_prompt, temperature=0.3).strip().strip('"\'')
+            print(f"   Search query: '{search_query}'")
+
+            if ctx.research_api:
+                from ..research import get_research_assistant
+                research = get_research_assistant()
+                papers = research.research_topic(
+                    query=search_query,
+                    context=f"Current performance: {state.current_metrics}",
+                    num_papers=2
+                )
+
+                if papers:
+                    papers_summary = "\n## Research Findings:\n"
+                    for paper in papers:
+                        papers_summary += f"- {paper.title}: {paper.abstract[:120]}...\n"
+        except Exception as e:
+            print(f"   Note: Research skipped: {e}\n")
+
+        # PI analyzes team
+        current_team_info = "\n".join([
+            f"- {agent.title}: {agent.expertise[:100]}"
+            for agent in ctx.team_members
+        ])
+
+        recent_history = ""
+        if len(state.history) >= 3:
+            recent_history = "\n## Recent Progress:\n"
+            for hist in state.history[-3:]:
+                metrics_str = str(hist.metrics) if hist.metrics else "FAILED"
+                recent_history += f"Iteration {hist.iteration}: {metrics_str}\n"
+
+        situation_desc = "Progress has stalled."
+        if not state.current_metrics:
+            situation_desc = "The most recent iteration FAILED to produce metrics."
+
+        evolution_task = f"""
+Analyze the current situation and decide whether team evolution is needed.
+
+## Situation:
+{situation_desc}
+
+## Current Team:
+{current_team_info if current_team_info else "Only you (PI)"}
+
+## Current Performance:
+{state.current_metrics if state.current_metrics else "No metrics from last iteration"}
+
+{recent_history}
+{papers_summary}
+
+## Your Options:
+1. NO CHANGE: Current team is fine
+2. ADD a new specialist
+3. REMOVE an agent
+4. DEEPEN an existing agent
+5. MULTIPLE changes
+
+## Your Task:
+Is this a TEAM COMPOSITION issue or an IMPLEMENTATION issue?
+
+Specify your decision:
+- NO CHANGE: [Reason]
+OR
+- ADD: [Title] with expertise in [expertise] to [role]
+- REMOVE: [Title] because [reason]
+- DEEPEN: [Title] into [New Title] with expertise in [expertise]
+"""
+
+        meeting = IndividualMeeting(save_dir=str(ctx.results_dir / 'meetings'))
+        evolution_plan = meeting.run(
+            agent=ctx.team_lead,
+            task=evolution_task,
+            num_iterations=1
+        )
+
+        print(f"\n{ctx.team_lead.title}'s evolution plan:\n{evolution_plan}\n")
+
+        # Execute evolution plan
+        _execute_evolution_plan(ctx, state, evolution_plan, papers if 'papers' in locals() else [])
+
+        # Update state from agents
+        ctx.update_state_from_agents(state)
+
+        state.evolution.triggered = False
+        state.phase = "plan"
+        return state
+
+    return evolve_node
+
+
+def _execute_evolution_plan(ctx: ExecutionContext, state: ExperimentState, plan: str, papers: List):
+    """Helper to execute PI's evolution plan"""
+
+    changes_made = []
+
+    for line in plan.split('\n'):
+        line = line.strip()
+
+        # NO CHANGE
+        if line.upper().startswith('NO CHANGE:'):
+            reason = line.split(':', 1)[1].strip() if ':' in line else "Team composition is adequate"
+            print(f"\n✋ No team evolution needed: {reason}")
+            state.evolution.decision = "NO_CHANGE"
+            state.evolution.reason = reason
+            return
+
+        # ADD agent
+        elif line.upper().startswith('ADD:'):
+            new_agent = Agent(
+                title="Domain Specialist",
+                expertise="specialized domain knowledge",
+                goal="break through performance plateau",
+                role="apply domain-specific insights"
+            )
+            ctx.team_members.append(new_agent)
+            ctx.all_agents = [ctx.team_lead] + ctx.team_members
+            if ctx.team:
+                ctx.team.agents = ctx.all_agents
+            changes_made.append(f"✅ Added {new_agent.title}")
+            state.evolution.decision = "ADD_AGENT"
+
+        # REMOVE agent
+        elif line.upper().startswith('REMOVE:'):
+            if ctx.team_members:
+                removed = ctx.team_members.pop(0)
+                ctx.all_agents = [ctx.team_lead] + ctx.team_members
+                if ctx.team:
+                    ctx.team.agents = ctx.all_agents
+                changes_made.append(f"✅ Removed {removed.title}")
+                state.evolution.decision = "REMOVE_AGENT"
+
+        # DEEPEN agent
+        elif line.upper().startswith('DEEPEN:'):
+            if ctx.team_members:
+                agent = ctx.team_members[0]
+                old_title = agent.title
+
+                context = {
+                    'problem_description': plan,
+                    'deepening': True
+                }
+                ctx.evolution_engine.evolve_agent(
+                    agent=agent,
+                    context=context,
+                    papers=papers,
+                    trigger_reason="Team evolution - specialization needed"
+                )
+
+                changes_made.append(f"✅ Deepened {old_title} → {agent.title}")
+                state.evolution.decision = "DEEPEN_AGENT"
+
+    if changes_made:
+        print("\n🔄 Team Evolution Complete:")
+        for change in changes_made:
+            print(f"   {change}")
+
+        print(f"\n👥 New team composition:")
+        print(f"   - {ctx.team_lead.title} (Lead)")
+        for agent in ctx.team_members:
+            print(f"   - {agent.title}")
+        print()
+
+        # Save evolution record
+        evolution_record = {
+            'iteration': state.iteration,
+            'evolution_plan': plan,
+            'changes': changes_made,
+            'new_team': [{'title': a.title, 'expertise': a.expertise} for a in ctx.all_agents]
+        }
+        save_json(evolution_record, ctx.results_dir / f'evolution_iter_{state.iteration}.json')

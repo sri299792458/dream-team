@@ -16,14 +16,15 @@ from dream_team.experiment import (
     AgentConfig,
     run_graph_experiment
 )
-from dream_team.executor import CodeExecutor
+import pandas as pd
+import numpy as np
 
 
 def main():
     print("="*70)
-    print("TEST: LangGraph Skeleton")
+    print("TEST: LangGraph with Real Nodes")
     print("="*70)
-    print("\nThis tests that the graph structure compiles and runs.\n")
+    print("\nThis tests that the graph runs with actual node implementations.\n")
 
     # Create minimal agent configs
     pi_config = AgentConfig(
@@ -47,17 +48,28 @@ def main():
         problem_statement="Test problem: predict target from features",
         target_metric="mae",
         minimize_metric=True,
-        max_iterations=2,
+        max_iterations=1,  # Just 1 iteration for quick test
         results_dir="scripts/test_graph_results"
     )
 
-    # Create dummy executor
-    executor = CodeExecutor()
+    # Create minimal test data
+    np.random.seed(42)
+    data_context = {
+        'train_df': pd.DataFrame({
+            'id': range(20),
+            'feature_1': np.random.randn(20),
+            'target': np.random.randn(20)
+        }),
+        'test_df': pd.DataFrame({
+            'id': range(20, 30),
+            'feature_1': np.random.randn(10)
+        })
+    }
 
     # Run graph
-    print("Running graph with placeholder nodes...\n")
+    print("Running graph with real node implementations...\n")
     try:
-        final_state = run_graph_experiment(state, executor)
+        final_state = run_graph_experiment(state, data_context)
 
         # Verify
         print("\n" + "="*70)
@@ -93,14 +105,14 @@ def main():
         for check in checks:
             print(check)
 
-        print("\n✅ Graph skeleton test PASSED")
-        print("   The graph structure is working correctly.")
-        print("   Ready for Phase 4: Move actual logic into nodes.\n")
+        print("\n✅ Graph test PASSED")
+        print("   The graph is working with real node implementations.")
+        print("   Phase 4 complete!\n")
 
         return 0
 
     except Exception as e:
-        print(f"\n❌ Graph skeleton test FAILED")
+        print(f"\n❌ Graph test FAILED")
         print(f"Error: {e}")
         import traceback
         traceback.print_exc()
