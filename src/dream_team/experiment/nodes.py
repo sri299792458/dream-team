@@ -495,6 +495,83 @@ def create_init_math_framework_node(ctx: ExecutionContext):
     return init_math_framework_node
 
 
+def _build_comprehensive_history(state: ExperimentState, max_iterations: int = 5) -> str:
+    """
+    Build comprehensive history context showing patterns across iterations.
+
+    Includes:
+    - What approaches were tried
+    - What errors occurred
+    - What worked vs what didn't
+    - Patterns to avoid
+    """
+    if not state.history:
+        return ""
+
+    sections = []
+
+    # Section 1: Iteration-by-iteration summary (last N iterations)
+    recent_history = state.history[-max_iterations:]
+    if recent_history:
+        history_lines = ["## Iteration History (most recent first):"]
+        for hist in reversed(recent_history):
+            status = "✅ SUCCESS" if hist.results.get('success') else "❌ FAILED"
+            metrics_str = str(hist.metrics) if hist.metrics else "no metrics"
+
+            # Show approach (first 200 chars)
+            approach_preview = (hist.approach[:200] + "...") if hist.approach and len(hist.approach) > 200 else (hist.approach or "N/A")
+
+            history_lines.append(f"\n### Iteration {hist.iteration}: {status}")
+            history_lines.append(f"Approach: {approach_preview}")
+            history_lines.append(f"Metrics: {metrics_str}")
+
+            # Show error if failed
+            if not hist.results.get('success') and hist.results.get('error'):
+                error_preview = hist.results['error'][:150]
+                history_lines.append(f"Error: {error_preview}")
+
+        sections.append("\n".join(history_lines))
+
+    # Section 2: Error patterns (what went wrong repeatedly)
+    errors = []
+    for hist in state.history:
+        if not hist.results.get('success') and hist.results.get('error'):
+            errors.append({
+                'iteration': hist.iteration,
+                'error': hist.results['error'],
+                'approach': hist.approach[:100] if hist.approach else ''
+            })
+
+    if errors:
+        error_lines = ["\n## Error Patterns (DO NOT REPEAT THESE MISTAKES):"]
+        for err in errors[-3:]:  # Last 3 errors
+            error_lines.append(f"- Iteration {err['iteration']}: {err['error'][:100]}")
+        sections.append("\n".join(error_lines))
+
+    # Section 3: What has worked (successful patterns)
+    successes = []
+    for hist in state.history:
+        if hist.results.get('success') and hist.metrics:
+            successes.append({
+                'iteration': hist.iteration,
+                'metrics': hist.metrics,
+                'approach': hist.approach[:150] if hist.approach else ''
+            })
+
+    if successes:
+        success_lines = ["\n## Successful Approaches (build on these):"]
+        for succ in successes[-3:]:  # Last 3 successes
+            success_lines.append(f"- Iteration {succ['iteration']}: {succ['metrics']}")
+            success_lines.append(f"  Approach: {succ['approach']}")
+        sections.append("\n".join(success_lines))
+
+    # Section 4: Best metric tracking
+    if state.best_metric is not None:
+        sections.append(f"\n## Best {state.config.target_metric} so far: {state.best_metric:.4f} (iteration {state.best_iteration})")
+
+    return "\n".join(sections)
+
+
 def create_plan_node(ctx: ExecutionContext):
     """Create plan node with access to execution context"""
 
@@ -506,39 +583,21 @@ def create_plan_node(ctx: ExecutionContext):
         """
         print("\n👥 Team planning meeting...\n")
 
-        # Build history context
-        history_context = ""
+        # Build comprehensive history context
+        history_context = _build_comprehensive_history(state, max_iterations=5)
+
+        # Get last iteration output for detailed review
+        last_output_preview = ""
         if state.history:
             last = state.history[-1]
-
-            # Build output preview
-            output_preview = ""
             if last.results and last.results.get('output'):
                 output = last.results['output']
                 if last.iteration == 0:  # Bootstrap
                     preview_len = min(3000, len(output))
-                    output_preview = f"\n\nBootstrap Exploration Output (first {preview_len} chars):\n```\n{output[:preview_len]}\n```"
+                    last_output_preview = f"\n\n## Bootstrap Output (first {preview_len} chars):\n```\n{output[:preview_len]}\n```"
                 else:
-                    preview_len = min(15000, len(output))
-                    if len(output) > 15000:
-                        output_preview = f"\n\nPrevious Iteration Output (last {preview_len} chars):\n```\n...{output[-preview_len:]}\n```"
-                    else:
-                        output_preview = f"\n\nPrevious Iteration Output:\n```\n{output}\n```"
-
-            # Build iteration history summary
-            history_summary = ""
-            if len(state.history) > 1:
-                history_summary = "\n## Iteration History:\n"
-                recent_iters = [h for h in state.history if h.iteration > 0][-3:]
-                for hist in recent_iters:
-                    approach_summary = (hist.approach[:150] + "...") if hist.approach and len(hist.approach) > 150 else (hist.approach or "")
-                    history_summary += f"- Iteration {hist.iteration}: {hist.metrics}\n  Approach: {approach_summary}\n"
-
-                if state.best_metric is not None:
-                    history_summary += f"\n**Best metric so far**: {state.best_metric}\n"
-
-            approach_preview = (last.approach[:200] + "...") if last.approach and len(last.approach) > 200 else (last.approach or "")
-            history_context = f"{history_summary}\n## Previous Iteration Results:\nApproach: {approach_preview}\nMetrics: {last.metrics}\n{output_preview}\n"
+                    preview_len = min(10000, len(output))
+                    last_output_preview = f"\n\n## Last Iteration Output (last {preview_len} chars):\n```\n...{output[-preview_len:]}\n```"
 
         # Column schemas
         columns_summary = ""
@@ -548,26 +607,29 @@ def create_plan_node(ctx: ExecutionContext):
                 columns_summary += f"\n{df_name}: {cols}\n"
 
         agenda = f"""
-**BE CONCISE.**
-
 ## Problem:
 {state.config.problem_statement}
 
 ## Available Dataframes:
 {list(ctx.data_context.keys())}
 {columns_summary}
+
 {history_context}
 
+{last_output_preview}
+
+## CRITICAL INSTRUCTIONS:
+- Review the Error Patterns section above - DO NOT repeat those mistakes
+- Build on Successful Approaches - iterate on what worked
+- If the same error occurs twice, try a FUNDAMENTALLY DIFFERENT approach
+
 ## Roles:
-- **Team Members**: Review previous results, then propose what to do next (use ReAct to search papers)
-- **Lead**: Synthesize team's analysis into clear decisions
+- **Team Members**: Analyze history, identify patterns, propose DIFFERENT approaches if stuck
+- **Lead**: Synthesize into decisive action plan that avoids past mistakes
 
 ## Task:
-Team members:
-1. Review the previous iteration - what worked? what failed?
-2. Propose what to implement next (2-3 sentences). Use ONLY the columns listed above.
-
-Lead: Synthesize into a decisive action plan.
+Team members: What patterns do you see? What should we try DIFFERENTLY?
+Lead: Make a decision that breaks out of any failure patterns.
 """
 
         meeting = TeamMeeting(
@@ -843,6 +905,58 @@ Output ONLY the FIXED Python code in ```python blocks.
     return extract_code_from_text(code_output)
 
 
+def _update_agent_knowledge(ctx: ExecutionContext, state: ExperimentState):
+    """
+    Extract learnings from iteration and update agent knowledge bases.
+
+    This ensures agents accumulate knowledge across iterations.
+    """
+    success = state.current_results.get('success', False) if state.current_results else False
+
+    if success and state.current_metrics:
+        # Record successful pattern
+        pattern = f"Iteration {state.iteration + 1}: {state.current_approach[:150] if state.current_approach else 'N/A'} -> {state.current_metrics}"
+
+        for agent in ctx.all_agents:
+            agent.knowledge_base.successful_patterns.append(pattern)
+
+            # Also add technique if we can identify it
+            if state.current_approach:
+                approach_lower = state.current_approach.lower()
+                techniques = []
+                if 'gradient boosting' in approach_lower or 'xgboost' in approach_lower or 'lightgbm' in approach_lower:
+                    techniques.append('gradient_boosting')
+                if 'neural' in approach_lower or 'deep learning' in approach_lower:
+                    techniques.append('neural_networks')
+                if 'feature engineering' in approach_lower:
+                    techniques.append('feature_engineering')
+                if 'cross-validation' in approach_lower or 'cv' in approach_lower:
+                    techniques.append('cross_validation')
+
+                for tech in techniques:
+                    agent.knowledge_base.add_technique(tech)
+
+    elif not success and state.current_results:
+        # Record error insight
+        error = state.current_results.get('error', 'Unknown error')
+        insight = f"Iteration {state.iteration + 1}: {error[:200]}"
+
+        for agent in ctx.all_agents:
+            if insight not in agent.knowledge_base.error_insights:
+                agent.knowledge_base.error_insights.append(insight)
+
+        # Extract specific error types
+        if 'KeyError' in error:
+            fact = f"KeyError encountered - always verify column names exist before using"
+            for agent in ctx.all_agents:
+                agent.knowledge_base.add_fact(fact, source=f"Iteration {state.iteration + 1} error")
+
+        if 'NameError' in error:
+            fact = f"NameError encountered - always define variables before using them"
+            for agent in ctx.all_agents:
+                agent.knowledge_base.add_fact(fact, source=f"Iteration {state.iteration + 1} error")
+
+
 def create_evaluate_node(ctx: ExecutionContext):
     """Create evaluate node with access to execution context"""
 
@@ -908,6 +1022,9 @@ def create_evaluate_node(ctx: ExecutionContext):
         if state.best_metric is not None:
             print(f"Best {state.config.target_metric} so far: {state.best_metric:.4f}")
         print(f"{'='*60}\n")
+
+        # Extract and store learnings in agent knowledge bases
+        _update_agent_knowledge(ctx, state)
 
         # Save iteration summary
         summary = state.get_iteration_summary()
