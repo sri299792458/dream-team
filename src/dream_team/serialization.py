@@ -5,10 +5,13 @@ Handles serialization of arbitrary Python objects that agents might create.
 """
 
 import json
+import logging
 import numpy as np
 import pandas as pd
 from typing import Any
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 
 class RobustJSONEncoder(json.JSONEncoder):
@@ -68,7 +71,7 @@ class RobustJSONEncoder(json.JSONEncoder):
         elif isinstance(obj, bytes):
             try:
                 return obj.decode('utf-8')
-            except:
+            except UnicodeDecodeError:
                 return f"<bytes: {len(obj)} bytes>"
 
         # Callables (functions, methods, classes)
@@ -97,7 +100,8 @@ class RobustJSONEncoder(json.JSONEncoder):
                     'class': obj.__class__.__name__,
                     'repr': repr(obj)[:200]
                 }
-            except:
+            except Exception as e:
+                logger.debug(f"Failed to serialize object of type {type(obj)}: {e}")
                 return '<unserializable object>'
 
 

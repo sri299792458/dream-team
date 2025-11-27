@@ -14,6 +14,7 @@ Each node:
 from typing import Dict, Any, Optional, List
 from pathlib import Path
 import pandas as pd
+import logging
 
 from .state import ExperimentState, AgentConfig, IterationSummary
 from ..agent import Agent
@@ -24,6 +25,8 @@ from ..knowledge_state import KnowledgeGraph, extract_concepts_from_text
 from ..team import Team
 from ..utils import save_json
 from ..research import get_research_assistant
+
+logger = logging.getLogger(__name__)
 
 
 # ============================================================================
@@ -1081,8 +1084,8 @@ def create_evaluate_node(ctx: ExecutionContext):
                             raw_metrics[target_metric] = float(value)
                         elif isinstance(value, (list, np.ndarray)):
                             raw_metrics[target_metric] = float(np.mean(value))
-                    except:
-                        pass
+                    except (ValueError, TypeError) as e:
+                        logger.debug(f"Failed to convert {key}={value} to float for target metric: {e}")
 
                 # Also collect other metrics
                 for metric_name in metric_names:
@@ -1092,8 +1095,8 @@ def create_evaluate_node(ctx: ExecutionContext):
                                 raw_metrics[key] = float(value)
                             elif isinstance(value, (list, np.ndarray)):
                                 raw_metrics[key] = float(np.mean(value))
-                        except:
-                            pass
+                        except (ValueError, TypeError) as e:
+                            logger.debug(f"Failed to convert {key}={value} to float for metric: {e}")
 
         state.current_metrics = raw_metrics
 

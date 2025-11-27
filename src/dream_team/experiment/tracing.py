@@ -5,8 +5,11 @@ Provides observability into experiment orchestration at the node/phase level.
 """
 
 import os
+import logging
 from typing import Optional, Dict, Any
 from contextlib import contextmanager
+
+logger = logging.getLogger(__name__)
 
 
 def configure_langsmith(
@@ -107,8 +110,10 @@ def add_node_metadata(
         # We can log it for visibility
         if os.getenv('LANGSMITH_TRACING') == 'true':
             print(f"   [TRACE] {node_name}: {metadata}")
-    except:
-        pass
+    except ImportError as e:
+        logger.debug(f"LangSmith not available for node metadata: {e}")
+    except Exception as e:
+        logger.warning(f"Failed to create node metadata for {node_name}: {e}")
 
 
 def create_experiment_metadata(state) -> Dict[str, Any]:

@@ -10,7 +10,10 @@ Implements the core mathematical framework:
 from dataclasses import dataclass, field
 from typing import Dict, Set, List, Tuple
 import numpy as np
+import logging
 from collections import defaultdict
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -361,8 +364,9 @@ Focus on technical terms, methodologies, and domain areas.
                 return set(c.lower() for c in result)
             elif isinstance(result, dict) and 'concepts' in result:
                 return set(c.lower() for c in result['concepts'])
-        except:
-            pass  # Fall back to heuristic
+        except Exception as e:
+            logger.debug(f"LLM concept extraction failed, using heuristic: {e}")
+            # Fall back to heuristic
 
     # Heuristic extraction
     concepts = set()
