@@ -582,7 +582,7 @@ Output ONLY the search query (2-4 words).
                     if result.title not in existing_titles:
                         paper = result.to_paper()
                         # Add paper to knowledge base AND update mathematical state (K, δ, θ)
-                    agent.add_paper_to_knowledge(paper)
+                        agent.add_paper_to_knowledge(paper)
                         print(f"      ✓ {paper.title[:60]}... ({paper.year})")
                         added += 1
 
