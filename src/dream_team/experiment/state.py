@@ -18,7 +18,7 @@ class AgentConfig(BaseModel):
     expertise: str
     goal: str
     role: str
-    model: str = "gemini-2.0-flash-exp"
+    model: str = "gemini-2.5-flash"
     specialization_depth: int = 0
 
 
@@ -91,13 +91,16 @@ class ExperimentState(BaseModel):
     iteration: int = 0
     phase: Literal[
         "init",
+        "init_math",
         "bootstrap",
         "plan",
         "code",
         "execute",
         "evaluate",
         "evolve",
-        "complete"
+        "complete",
+        "check_continue",
+        "check_evolution",
     ] = "init"
 
     # Team configuration

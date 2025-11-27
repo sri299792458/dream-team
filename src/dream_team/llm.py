@@ -18,7 +18,7 @@ class GeminiLLM:
     def __init__(
         self,
         api_key: Optional[str] = None,
-        model_name: str = "gemini-2.0-flash-exp",
+        model_name: str = "gemini-2.5-flash",
         temperature: float = 0.7,
         max_retries: int = 3
     ):

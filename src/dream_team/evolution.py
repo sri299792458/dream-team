@@ -232,7 +232,7 @@ Respond in JSON format:
         need_description: str,
         context: Dict,
         papers: List[Paper] = None,
-        base_model: str = "gemini-2.0-flash-exp"
+        base_model: str = "gemini-2.5-flash"
     ) -> Agent:
         """
         Create a brand new specialist agent from scratch

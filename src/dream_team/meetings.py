@@ -46,145 +46,144 @@ class Meeting:
 class TeamMeeting(Meeting):
     """Multi-agent team discussion"""
 
-    def _react_synthesis_task(self, team_lead, agenda: str, context: str, temperature: float, is_final: bool, max_steps: int = 3) -> str:
-        """
-        ReAct loop for PI synthesis: iterative reasoning to synthesize team proposals.
+    def _react_synthesis_task(self, team_lead, agenda: str, context: str, temperature: float, is_final: bool, max_steps: int = 2) -> str:
+            """
+            ReAct loop for PI synthesis: iterative reasoning to synthesize team proposals.
 
-        Pattern:
-        1. Thought: Analyze what each team member proposed
-        2. Thought: Identify conflicts, dependencies, priorities
-        3. Thought: Formulate clear action plan for coding agent
-        4. Final Answer: Write decisive synthesis
+            Pattern:
+            1. Thought: Analyze what each team member proposed
+            2. Thought: Identify conflicts, dependencies, priorities
+            3. Thought: Formulate clear action plan for coding agent
+            4. Final Answer: Write decisive synthesis
 
-        This is internal reasoning only - no external search.
-        Used for team lead to think through synthesis step-by-step.
-        """
-        print(f"   🧠 {team_lead.title} using ReAct reasoning for synthesis...")
+            This is internal reasoning only - no external search.
+            Used for team lead to think through synthesis step-by-step.
+            """
+            print(f"    🧠 {team_lead.title} using ReAct reasoning for synthesis...")
 
-        reasoning_steps = []
+            reasoning_steps = []
 
-        for step in range(max_steps):
-            # Build context from previous thoughts
-            previous_thoughts = ""
-            if reasoning_steps:
-                previous_thoughts = "\n\nPrevious reasoning:\n" + "\n".join([
-                    f"Step {i+1}: {thought}" for i, thought in enumerate(reasoning_steps)
-                ])
+            for step in range(max_steps):
+                # Build context from previous thoughts
+                previous_thoughts = ""
+                if reasoning_steps:
+                    previous_thoughts = "\n\nPrevious reasoning:\n" + "\n".join([
+                        f"Step {i+1}: {thought}" for i, thought in enumerate(reasoning_steps)
+                    ])
 
-            # Iterative thinking prompts
-            if step == 0:
-                thinking_prompt = f"""You are synthesizing team proposals.
+                # Iterative thinking prompts
+                if step == 0:
+                    thinking_prompt = f"""You are synthesizing team proposals.
 
-Agenda: {agenda}
+    Agenda: {agenda}
 
-Discussion so far:
-{context}
+    Discussion so far:
+    {context}
 
-Think step-by-step about WHAT WAS PROPOSED:
-- What did each team member propose?
-- What are the key ideas?
-- Are there common themes?
+    Think step-by-step about WHAT WAS PROPOSED:
+    - What did each team member propose?
+    - What are the key ideas?
+    - Are there common themes?
 
-Output only:
-Thought: [Your analysis of team proposals]
-"""
-            elif step == 1:
-                thinking_prompt = f"""You are refining your synthesis.
+    Output only:
+    Thought: [Your analysis of team proposals]
+    """
+                elif step == 1:
+                    thinking_prompt = f"""You are refining your synthesis.
 
-Agenda: {agenda}
+    Agenda: {agenda}
 
-Discussion so far:
-{context}
-{previous_thoughts}
+    Discussion so far:
+    {context}
+    {previous_thoughts}
 
-Think step-by-step about PRIORITIES AND DEPENDENCIES:
-- Are there any conflicts between proposals?
-- What needs to be done first?
-- What's most important for the goal?
+    Think step-by-step about PRIORITIES AND DEPENDENCIES:
+    - Are there any conflicts between proposals?
+    - What needs to be done first?
+    - What's most important for the goal?
 
-Output only:
-Thought: [Your thinking about priorities and dependencies]
-"""
+    Output only:
+    Thought: [Your thinking about priorities and dependencies]
+    """
+                else:
+                    thinking_prompt = f"""You are finalizing your synthesis.
+
+    Agenda: {agenda}
+
+    Discussion so far:
+    {context}
+    {previous_thoughts}
+
+    Think step-by-step about the ACTION PLAN:
+    - What specific steps should the coding agent take?
+    - In what order?
+    - Any important details to emphasize?
+
+    Output only:
+    Thought: [Your final thoughts on the action plan]
+    """
+
+                thought = self.llm.generate(
+                    thinking_prompt,
+                    system_instruction=team_lead.prompt,
+                    temperature=temperature * 0.7
+                ).strip()
+
+                # Remove "Thought:" prefix if present
+                if thought.startswith('Thought:'):
+                    thought = thought.replace('Thought:', '').strip()
+
+                print(f"      Step {step+1}: {thought[:100]}...")
+                reasoning_steps.append(thought)
+
+            # Final: Write synthesis based on all reasoning
+            if is_final:
+                final_prompt = f"""You are providing FINAL SYNTHESIS and DECISIONS.
+
+    Agenda: {agenda}
+
+    Discussion so far:
+    {context}
+
+    Your reasoning process:
+    {chr(10).join([f"Step {i+1}: {thought}" for i, thought in enumerate(reasoning_steps)])}
+
+    Now write your FINAL SYNTHESIS outlining the work to be done.
+
+    IMPORTANT:
+    - Make FINAL DECISIONS, do NOT ask clarifying questions
+    - Synthesize what the team proposed into a clear action plan to be implemented next
+    - Be decisive and specific about what to implement
+    - Structure it clearly for the coding agent to understand
+
+    Keep it focused (2-3 paragraphs).
+    """
             else:
-                thinking_prompt = f"""You are finalizing your synthesis.
+                final_prompt = f"""You are providing intermediate synthesis.
 
-Agenda: {agenda}
+    Agenda: {agenda}
 
-Discussion so far:
-{context}
-{previous_thoughts}
+    Discussion so far:
+    {context}
 
-Think step-by-step about the ACTION PLAN:
-- What specific steps should the coding agent take?
-- In what order?
-- Any important details to emphasize?
+    Your reasoning process:
+    {chr(10).join([f"Step {i+1}: {thought}" for i, thought in enumerate(reasoning_steps)])}
 
-Output only:
-Thought: [Your final thoughts on the action plan]
-"""
+    Now write your synthesis based on your reasoning.
 
-            thought = self.llm.generate(
-                thinking_prompt,
+    As team lead, synthesize the key points and guide the next round of discussion.
+    Highlight areas of agreement and any gaps that need more exploration.
+
+    Keep it concise (1-2 paragraphs).
+    """
+
+            synthesis = self.llm.generate(
+                final_prompt,
                 system_instruction=team_lead.prompt,
-                temperature=temperature * 0.7
-            ).strip()
+                temperature=temperature * 0.8
+            )
 
-            # Remove "Thought:" prefix if present
-            if thought.startswith('Thought:'):
-                thought = thought.replace('Thought:', '').strip()
-
-            print(f"      Step {step+1}: {thought[:100]}...")
-            reasoning_steps.append(thought)
-
-        # Final: Write synthesis based on all reasoning
-        if is_final:
-            final_prompt = f"""You are providing FINAL SYNTHESIS and DECISIONS.
-
-Agenda: {agenda}
-
-Discussion so far:
-{context}
-
-Your reasoning process:
-{chr(10).join([f"Step {i+1}: {thought}" for i, thought in enumerate(reasoning_steps)])}
-
-Now write your FINAL SYNTHESIS based on your reasoning.
-
-IMPORTANT:
-- Make FINAL DECISIONS, do NOT ask clarifying questions
-- Synthesize what the team proposed into a clear action plan
-- Be decisive and specific about what to implement
-- Structure it clearly for the coding agent to understand
-
-Keep it focused (2-3 paragraphs).
-"""
-        else:
-            final_prompt = f"""You are providing intermediate synthesis.
-
-Agenda: {agenda}
-
-Discussion so far:
-{context}
-
-Your reasoning process:
-{chr(10).join([f"Step {i+1}: {thought}" for i, thought in enumerate(reasoning_steps)])}
-
-Now write your synthesis based on your reasoning.
-
-As team lead, synthesize the key points and guide the next round of discussion.
-Highlight areas of agreement and any gaps that need more exploration.
-
-Keep it concise (1-2 paragraphs).
-"""
-
-        synthesis = self.llm.generate(
-            final_prompt,
-            system_instruction=team_lead.prompt,
-            temperature=temperature * 0.8
-        )
-
-        return synthesis
-
+            return synthesis
     def run(
         self,
         team_lead: Agent,
@@ -321,7 +320,7 @@ Provide in JSON format:
             for msg in recent
         ])
 
-    def _react_proposal(self, agent, agenda: str, context: str, temperature: float, max_steps: int = 3) -> str:
+    def _react_proposal(self, agent, agenda: str, context: str, temperature: float, max_steps: int = 2) -> str:
         """
         ReAct loop: agent reasons and acts iteratively before final proposal.
 
@@ -597,7 +596,7 @@ Output ONLY the search query (2-4 words).
 class IndividualMeeting(Meeting):
     """One-on-one meeting with critic"""
 
-    def _react_coding_task(self, agent, task: str, temperature: float, max_steps: int = 3) -> str:
+    def _react_coding_task(self, agent, task: str, temperature: float, max_steps: int = 2) -> str:
         """
         ReAct loop for coding tasks: iterative reasoning to plan implementation.
 
@@ -700,7 +699,7 @@ Output ONLY the code in ```python blocks.
 
         return final_output
 
-    def _react_individual_task(self, agent, task: str, temperature: float, max_steps: int = 3) -> str:
+    def _react_individual_task(self, agent, task: str, temperature: float, max_steps: int = 2) -> str:
         """
         ReAct loop for individual task: agent reasons and searches papers before final output.
 
