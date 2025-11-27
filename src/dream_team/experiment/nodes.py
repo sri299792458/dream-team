@@ -710,7 +710,8 @@ Implement the team's plan.
 ## Requirements:
 - Write complete, executable code
 - Use EXACT column names from DataFrame Schemas above
-- If training/evaluating a model, compute {state.config.target_metric.upper()} and store it in a variable
+- **CRITICAL**: After computing your metric, assign it to a variable named EXACTLY `{state.config.target_metric}` (lowercase)
+  Example: `{state.config.target_metric} = computed_metric_value`  # NOT {state.config.target_metric.upper()}, NOT mean_absolute_error, etc.
 - Print important outputs: metrics, feature importance, model summaries
 - Save trained models if training took long
 - Suppress verbose output: warnings.filterwarnings('ignore'), use verbose=0 or verbose=-1
@@ -949,6 +950,8 @@ The error shows EXACTLY what's wrong. Read the traceback line number.
 
 **For KeyError (column doesn't exist):**
 - Check the DataFrame Schemas above for the EXACT column name
+
+**CRITICAL REMINDER**: Your final metric MUST be assigned to a variable named exactly `{state.config.target_metric}` (lowercase).
 
 **DO NOT output the same code again. Actually fix the specific line that failed.**
 

@@ -10,11 +10,22 @@ import traceback
 import subprocess
 import re
 import importlib
+import signal
 from typing import Dict, Any, Optional, Tuple
 import pandas as pd
 import numpy as np
 import torch
 from pathlib import Path
+
+
+class TimeoutError(Exception):
+    """Raised when code execution exceeds timeout"""
+    pass
+
+
+def timeout_handler(signum, frame):
+    """Signal handler for timeout"""
+    raise TimeoutError("Code execution exceeded timeout limit")
 
 
 class CodeExecutor:
@@ -47,7 +58,7 @@ class CodeExecutor:
         Args:
             code: Python code to execute
             description: Description of what this code does
-            timeout: Timeout in seconds (not enforced yet, for future use)
+            timeout: Timeout in seconds (enforced on Unix/Linux/Mac; gracefully degrades on Windows)
 
         Returns:
             {
@@ -96,11 +107,23 @@ class CodeExecutor:
             sys.stdout = stdout_capture
             sys.stderr = stderr_capture
 
-            # Execute code with single namespace (used for both globals and locals)
-            # This makes locals() in the code return the namespace with data_context
-            exec(code, exec_namespace)
+            # Set up timeout (Unix/Linux/Mac only; Windows will skip this)
+            timeout_set = False
+            if hasattr(signal, 'SIGALRM'):
+                signal.signal(signal.SIGALRM, timeout_handler)
+                signal.alarm(timeout)
+                timeout_set = True
 
-            result['success'] = True
+            try:
+                # Execute code with single namespace (used for both globals and locals)
+                # This makes locals() in the code return the namespace with data_context
+                exec(code, exec_namespace)
+
+                result['success'] = True
+            finally:
+                # Cancel timeout if it was set
+                if timeout_set:
+                    signal.alarm(0)
             full_output = stdout_capture.getvalue()
 
             # Limit output length to prevent context overload
@@ -128,6 +151,19 @@ class CodeExecutor:
             print(f"   ✅ Success{truncation_note}")
             if result['output']:
                 print(f"   Output: {result['output'][:200]}...")
+
+        except TimeoutError as e:
+            result['success'] = False
+            result['error'] = f"Execution timeout ({timeout}s exceeded). Code likely has infinite loop or very long computation."
+            result['traceback'] = traceback.format_exc()
+
+            full_output = stdout_capture.getvalue()
+            result['output'] = self._truncate_output(full_output)
+            if len(full_output) > self.max_output_length:
+                result['output_truncated'] = True
+                result['original_output_length'] = len(full_output)
+
+            print(f"   ⏱️  Timeout: Code execution exceeded {timeout}s limit")
 
         except Exception as e:
             result['success'] = False
