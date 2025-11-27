@@ -11,24 +11,27 @@ import numpy as np
 from pathlib import Path
 from typing import Dict, Any
 
-from dream_team.experiment.state import (
-    ExperimentState,
-    ExperimentConfig,
-    TeamConfig,
+import dream_team.experiment.graph.nodes as nodes
+from dream_team.agent import Agent
+
+from dream_team.experiment.graph import (
     AgentConfig,
-    MathematicalState,
-    EvolutionState
-)
-from dream_team.experiment.nodes import (
+    EvolutionState,
+    ExperimentConfig,
+    ExperimentState,
     ExecutionContext,
+    MathematicalState,
+    TeamConfig,
+)
+from dream_team.experiment.graph.nodes import (
     create_bootstrap_node,
+    create_check_evolution_node,
+    create_code_node,
+    create_evaluate_node,
+    create_execute_node,
     create_init_math_framework_node,
     create_plan_node,
-    create_code_node,
-    create_execute_node,
-    create_evaluate_node,
-    create_check_evolution_node,
-    create_evolve_node
+    create_evolve_node,
 )
 
 
@@ -82,7 +85,7 @@ def initial_state(agent_configs, tmp_path):
         target_metric="mae",
         minimize_metric=True,
         max_iterations=3,
-        goal_target=None
+        target_score=None,
     )
 
     team = TeamConfig(
@@ -163,6 +166,43 @@ def test_bootstrap_node_skips_if_completed(initial_state, execution_context):
 
     # Should skip and go straight to planning
     assert result_state.phase == "plan"
+
+
+def test_bootstrap_fails_on_empty_recruitment(initial_state, execution_context, monkeypatch):
+    """Ensure bootstrap raises when recruitment parsing yields no agents."""
+
+    monkeypatch.setattr(nodes.IndividualMeeting, "run", lambda self, agent, task, num_iterations=1, **kwargs: "No agents found")
+    monkeypatch.setattr(nodes, "_parse_and_recruit_agents", lambda ctx, plan, results_dir: [])
+
+    bootstrap_node = create_bootstrap_node(execution_context)
+
+    with pytest.raises(ValueError, match="Recruitment parsing produced no agents"):
+        bootstrap_node(initial_state)
+
+
+def test_bootstrap_requires_column_schemas(initial_state, monkeypatch, tmp_path):
+    """Bootstrap should fail loudly if no column schemas can be derived."""
+
+    empty_context = ExecutionContext(data_context={}, results_dir=tmp_path / "no_schema")
+
+    def fake_run(self, agent, task, num_iterations=1, use_react=False, use_react_coding=False, **kwargs):
+        if use_react_coding:
+            return """```python
+print('noop')
+```"""
+        return "AGENT 1:\nTitle: Data Scientist\nExpertise: stats\nRole: analyze"
+
+    monkeypatch.setattr(nodes.IndividualMeeting, "run", fake_run, raising=False)
+    monkeypatch.setattr(empty_context.executor, "execute", lambda code, description="": {"success": True, "output": ""})
+    monkeypatch.setattr(empty_context.executor, "get_variable", lambda name: None)
+    monkeypatch.setattr(nodes, "_parse_and_recruit_agents", lambda ctx, plan, results_dir: [
+        Agent(title="Analyst", expertise="stats", goal="analyze", role="analysis")
+    ])
+
+    bootstrap_node = create_bootstrap_node(empty_context)
+
+    with pytest.raises(ValueError, match="No column schemas"):
+        bootstrap_node(initial_state)
 
 
 # ============================================================================

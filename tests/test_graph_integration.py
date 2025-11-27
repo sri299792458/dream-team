@@ -336,7 +336,7 @@ def test_graph_stops_when_goal_achieved(test_data, agent_configs, tmp_path):
         target_metric="mae",
         minimize_metric=True,
         max_iterations=10,
-        goal_target=100.0,  # Easy goal to achieve
+        target_score=100.0,  # Easy goal to achieve
         results_dir=str(tmp_path / "results")
     )
 

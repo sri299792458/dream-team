@@ -14,7 +14,7 @@ The Dream Team framework is a LangGraph-based autonomous research system where A
   - Returns final optimized state
 
 ### Graph Construction & Execution
-- **`src/dream_team/experiment/graph_app.py`**
+- **`src/dream_team/experiment/graph/builder.py`**
   - `create_experiment_graph(ctx)` - builds StateGraph
   - `run_graph_experiment(state, data_context, ...)` - executes with tracing
   - Creates ExecutionContext with non-serializable objects
@@ -52,7 +52,7 @@ START → bootstrap → init_math → ┌→ plan → code → execute → evalu
 ## State Management
 
 ### Primary State Model
-- **`ExperimentState`** (Pydantic BaseModel in `state.py`)
+- **`ExperimentState`** (Pydantic BaseModel in `graph/state.py`)
   - `iteration`: int - current iteration number
   - `phase`: Literal["init", "bootstrap", "plan", ...] - current phase
   - `team`: TeamConfig - agent configurations
@@ -67,7 +67,7 @@ START → bootstrap → init_math → ┌→ plan → code → execute → evalu
   - `goal_achieved/should_stop`: termination flags
 
 ### Execution Context
-- **`ExecutionContext`** (non-serializable, in `nodes.py`)
+- **`ExecutionContext`** (non-serializable, in `graph/context.py`)
   - `data_context`: Dict with DataFrames, artifacts_dir
   - `executor`: CodeExecutor instance
   - `research_api`: SemanticScholarAPI
@@ -171,7 +171,6 @@ START → bootstrap → init_math → ┌→ plan → code → execute → evalu
 6. **Mixed concerns** - ExecutionContext does too much (agents + tools + math)
 7. **Fuzzy prompts** - Agents don't know data is pre-loaded
 8. **Error swallowing** - try/except blocks with pass
-9. **Duplicate routing** - route_after_check_evolution defined twice in graph_app.py (lines 63, 118)
 
 ### Correctness Issues (Fixed)
 ✅ Research papers now update mathematical framework (K, δ, θ)

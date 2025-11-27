@@ -908,7 +908,9 @@ Focus on methods, findings, or techniques that could be applied."""
         """
 
         print(f"\n👤 INDIVIDUAL MEETING")
-        print(f"   Agent: {agent.title}")
+        agent_title = agent.title if agent else "OfflineAgent"
+        system_prompt = agent.prompt if agent else None
+        print(f"   Agent: {agent_title}")
         print(f"   Iterations: {num_iterations}")
         if use_react and self.research_api:
             print(f"   Using ReAct: Yes (with paper search)")
@@ -931,13 +933,16 @@ Complete this task drawing on your expertise and knowledge base.
 Be specific, detailed, and actionable.
 """
 
-            output = self.llm.generate(
-                work_prompt,
-                system_instruction=agent.prompt,
-                temperature=temperature
-            )
+            if agent is None:
+                output = "Offline stub response."
+            else:
+                output = self.llm.generate(
+                    work_prompt,
+                    system_instruction=system_prompt,
+                    temperature=temperature
+                )
 
-        self.add_message(agent.title, output)
+        self.add_message(agent_title, output)
         agent.meetings_participated += 1
 
         print(f"💬 {agent.title} (initial):")

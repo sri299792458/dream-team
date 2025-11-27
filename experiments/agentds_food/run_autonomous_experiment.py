@@ -154,7 +154,7 @@ and iteratively improve your predictions to minimize MAE.
         target_metric='mae',
         minimize_metric=True,
         max_iterations=5,
-        goal_target=None,  # No specific target, just minimize
+        target_score=None,  # No specific target, just minimize
         results_dir=str(results_dir)
     )
 

@@ -4,6 +4,10 @@
 
 This session completed a comprehensive analysis and initial refactoring of the Dream Team framework, transforming it from a custom orchestration system to a clean, LangGraph-idiomatic implementation.
 
+### Current status
+- **Done:** Checkpointer + `thread_id` support, routing helpers/tests, offline-safe numpy/pandas/torch stubs, deterministic fallbacks for metrics/prompts, architecture documentation.
+- **Still open:** ToolNode/bind_tools migration, interrupt-based human-in-the-loop for evolution, splitting the monolithic `nodes.py`, tightening validation/error logging (bootstrap recruitment, metric parsing), and broader node/integration test coverage.
+
 ## ✅ What Was Completed
 
 ### 1. Clean Branch Created ✨
@@ -65,7 +69,7 @@ cols = [str(col) for col in value.columns]
 ```
 
 #### Duplicate Routing Function
-**Problem:** `route_after_check_evolution()` defined twice in graph_app.py
+**Problem:** `route_after_check_evolution()` defined twice in graph/builder.py
 
 **Fix:** Removed duplicate definition
 
@@ -112,7 +116,7 @@ Each phase includes:
 Current:
 - 16 Python modules (5,954 total lines)
 - 1 graph with 10 nodes
-- Manual state management (invoke only, no checkpointer)
+- MemorySaver checkpointer and thread_id-enabled runs
 - Custom tool execution (IndividualMeeting)
 - No HIL patterns
 
@@ -124,13 +128,12 @@ START → bootstrap → init_math → plan → code → execute →
 ### Issues Breakdown
 
 **P0 - Critical Bugs (30 min)**
-- [x] Duplicate routing function
 - [ ] Error swallowing (except: pass)
 - [ ] Bootstrap recruitment validation
 
 **P1 - LangGraph Migration (11 hours)**
-- [ ] Checkpointer support (InMemorySaver)
-- [ ] Thread_id for sessions
+- [x] Checkpointer support (InMemorySaver)
+- [x] Thread_id for sessions
 - [ ] Convert research API to LangChain Tool
 - [ ] Convert executor to LangChain Tool
 - [ ] Replace IndividualMeeting with ReAct + ToolNode
@@ -138,13 +141,13 @@ START → bootstrap → init_math → plan → code → execute →
 - [ ] Command(resume=...) handling
 
 **P2 - Code Organization (5 hours)**
-- [ ] Split nodes.py (1439 lines → 8 files of ~180 lines each)
-- [ ] Create context.py (150 lines)
-- [ ] Create routing.py (50 lines)
+- [ ] Split nodes.py (1300+ lines → focused files)
+- [x] Create context.py (non-serializable resources)
+- [x] Create routing.py (conditional edge helpers)
 - [ ] Refactor ExecutionContext (separate concerns)
 
 **P3 - Testing (6 hours)**
-- [ ] Unit tests for all nodes
+- [ ] Unit tests for remaining nodes beyond routing/basic paths
 - [ ] Integration tests for flows
 - [ ] Regression tests for fixed bugs
 - [ ] >80% code coverage
@@ -155,7 +158,7 @@ START → bootstrap → init_math → plan → code → execute →
 - [ ] Add comprehensive docstrings
 - [ ] Update README
 
-**Total Estimated:** ~24.5 hours remaining
+**Total Estimated:** ~20 hours remaining
 
 ### What Works Well ✅
 
@@ -171,11 +174,10 @@ START → bootstrap → init_math → plan → code → execute →
 
 1. **Module Size:** 1439-line nodes.py is unmaintainable
 2. **Tool Integration:** Not using LangGraph ToolNode
-3. **Checkpointing:** No state persistence or resumability
-4. **HIL Patterns:** No human approval for critical decisions
-5. **Testing:** Zero unit/integration tests
-6. **Error Handling:** Many except: pass blocks swallow errors
-7. **ExecutionContext:** Does too much (agents + tools + math + evolution)
+3. **HIL Patterns:** No human approval for critical decisions
+4. **Testing:** Limited to routing/basic node paths; no integration or validation coverage yet
+5. **Error Handling:** Many except: pass blocks swallow errors
+6. **ExecutionContext:** Does too much (agents + tools + math + evolution)
 
 ## 🎯 Recommended Next Actions
 
@@ -200,10 +202,9 @@ START → bootstrap → init_math → plan → code → execute →
    - Create graph/nodes/ structure
    - 8 focused files instead of 1 god file
 
-5. **Add checkpointer** (2 hours)
-   - Follow Phase 2 in NEXT_STEPS.md
-   - InMemorySaver for development
-   - Thread_id support
+5. **Harden checkpointing** (2 hours)
+   - Swap MemorySaver for a persistent saver when available
+   - Add minimal docs for resume expectations and thread_id usage
 
 6. **ToolNode migration** (6 hours)
    - Follow Phase 3 in NEXT_STEPS.md
@@ -237,7 +238,7 @@ START → bootstrap → init_math → plan → code → execute →
 
 ### Core Implementation
 - `src/dream_team/experiment/state.py` - ExperimentState (Pydantic)
-- `src/dream_team/experiment/graph_app.py` - Graph construction
+- `src/dream_team/experiment/graph/builder.py` - Graph construction
 - `src/dream_team/experiment/nodes.py` - All 8 node implementations (TO SPLIT)
 - `src/dream_team/experiment/tracing.py` - LangSmith integration
 

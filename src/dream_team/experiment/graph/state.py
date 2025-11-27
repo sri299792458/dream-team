@@ -92,10 +92,13 @@ class ExperimentState(BaseModel):
     phase: Literal[
         "init",
         "bootstrap",
+        "init_math",
         "plan",
         "code",
         "execute",
         "evaluate",
+        "check_continue",
+        "check_evolution",
         "evolve",
         "complete"
     ] = "init"
@@ -167,9 +170,11 @@ class ExperimentState(BaseModel):
 
         current = self.current_metrics[self.config.target_metric]
 
+        record_iteration = self.iteration if self.iteration > 0 else 1
+
         if self.best_metric is None:
             self.best_metric = current
-            self.best_iteration = self.iteration
+            self.best_iteration = record_iteration
             return True
 
         is_better = (
@@ -179,7 +184,7 @@ class ExperimentState(BaseModel):
 
         if is_better:
             self.best_metric = current
-            self.best_iteration = self.iteration
+            self.best_iteration = record_iteration
             return True
 
         return False
