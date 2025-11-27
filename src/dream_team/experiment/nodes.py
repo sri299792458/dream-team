@@ -180,14 +180,20 @@ def create_bootstrap_node(ctx: ExecutionContext):
         print(f"\n{ctx.team_lead.title} is exploring the problem alone...\n")
 
         # PI decides what exploration is needed
+        # Build data info
+        data_list = [k for k in ctx.data_context.keys() if k != 'artifacts_dir']
+
         exploration_task = f"""
 You've received a new research problem. Before assembling a team, you need to understand what you're dealing with.
 
 ## Problem:
 {state.config.problem_statement}
 
-## Available Data:
-{list(ctx.data_context.keys())}
+## Available Data (ALREADY LOADED in memory):
+{', '.join(data_list)}
+
+These dataframes are ALREADY LOADED. You can use them directly (e.g., `batches_train.head()`).
+DO NOT re-load data from files or create dummy/synthetic data.
 
 ## Your Task:
 Decide what initial exploration will help you understand:
@@ -268,7 +274,8 @@ Output ONLY the Python code, wrapped in ```python code blocks.
             for key in data_keys:
                 df = ctx.executor.get_variable(key)
                 if df is not None and hasattr(df, 'columns'):
-                    cols = list(df.columns)
+                    # Convert all column names to strings for Pydantic validation
+                    cols = [str(col) for col in df.columns]
                     state.column_schemas[key] = cols
                     print(f"   {key}: {len(cols)} columns")
 
@@ -692,23 +699,36 @@ def create_code_node(ctx: ExecutionContext):
         if state.column_schemas:
             schema_info = "\n## DataFrame Schemas (use EXACT column names):\n"
             for df_name, cols in state.column_schemas.items():
-                schema_info += f"{df_name}: {cols}\n"
+                schema_info += f"- {df_name}: {cols}\n"
+
+        # Build explicit data context info
+        data_info = "\n## Data Available (ALREADY LOADED in memory - use directly):\n"
+        for df_name in ctx.data_context.keys():
+            if df_name == 'artifacts_dir':
+                continue
+            df = ctx.data_context.get(df_name)
+            if hasattr(df, '__len__') and hasattr(df, 'columns'):
+                data_info += f"- {df_name}: DataFrame with {len(df)} rows (use as `{df_name}`, already in memory)\n"
+            else:
+                data_info += f"- {df_name}: {type(df).__name__}\n"
+        data_info += "\n**CRITICAL**: These dataframes are ALREADY LOADED. Use them directly (e.g., `batches_train.head()`).\n"
+        data_info += "**DO NOT** re-load data from files or create synthetic/dummy data.\n"
 
         task = f"""
 Implement the team's plan.
 
 ## Team's Plan:
 {state.current_approach}
-
-## Available dataframes:
-{list(ctx.data_context.keys())}
+{data_info}
 {schema_info}
 {previous_output_context}
-## Available in execution context:
-- Pre-imported libraries: pandas (pd), numpy (np), torch
+## Pre-imported libraries:
+- pandas as pd
+- numpy as np
+- torch
 
 ## Requirements:
-- Write complete, executable code
+- Write complete, executable code that uses the REAL data listed above
 - Use EXACT column names from DataFrame Schemas above
 - **CRITICAL**: After computing your metric, assign it to a variable named EXACTLY `{state.config.target_metric}` (lowercase)
   Example: `{state.config.target_metric} = computed_metric_value`  # NOT {state.config.target_metric.upper()}, NOT mean_absolute_error, etc.
@@ -759,7 +779,8 @@ def _refresh_column_schemas(ctx: ExecutionContext, state: ExperimentState):
 
     for key, value in ctx.executor.data_context.items():
         if isinstance(value, pd.DataFrame):
-            cols = list(value.columns)
+            # Convert all column names to strings for Pydantic validation
+            cols = [str(col) for col in value.columns]
 
             # Check if this is new or changed
             if key not in state.column_schemas:
