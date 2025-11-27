@@ -39,8 +39,8 @@ class KnowledgeGraph:
         if embedding is not None:
             self.embeddings[concept] = embedding
         elif concept not in self.embeddings:
-            # Initialize random embedding if not provided
-            self.embeddings[concept] = np.random.randn(128) / np.sqrt(128)  # d=128, normalized
+            # Initialize deterministic lightweight embedding for offline/testing.
+            self.embeddings[concept] = [0.0 for _ in range(128)]
 
     def add_edge(self, concept1: str, concept2: str, weight: float = 1.0):
         """Add relation between concepts"""

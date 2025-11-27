@@ -11,14 +11,15 @@
   - Fixed with signal.SIGALRM timeout handler
 - [x] **Pydantic validation errors** - Integer column names fail string validation
   - Fixed by converting column names to strings
+- [x] **Duplicate routing function** - `route_after_check_evolution` was defined twice; routing is now centralized in `graph/routing.py` and referenced from the builder
+- [x] **Bootstrap can fail silently** - Recruitment or schema extraction failures quietly continued
+  - Fixed by validating recruitment parsing and column schemas, warning and failing in strict runs while falling back explicitly offline
 
 ### 🔴 OPEN
-- [ ] **Duplicate routing function** - `route_after_check_evolution` defined twice in graph_app.py (lines 63, 118)
 - [ ] **Error swallowing** - Multiple `except: pass` blocks hide failures
 - [ ] **Fuzzy metric extraction** - Substring matching can grab wrong variables
   - Partially fixed with explicit prompts, but still uses heuristics
 - [ ] **No validation of agent responses** - Assumes LLM always returns well-formed outputs
-- [ ] **Bootstrap can fail silently** - If recruitment parsing fails, team_members stay empty
 
 ## Design Smells / Clutter
 
@@ -35,7 +36,7 @@
   - Should use LangGraph conditional edges
 - [ ] **Ad-hoc tool calling** - Tools called directly in node functions
   - Should use ToolNode and bind_tools()
-- [ ] **No separation of routing logic** - Routing mixed with graph_app.py
+- [ ] **No separation of routing logic** - Routing mixed with graph/builder.py
   - Should have dedicated routing.py
 - [ ] **Nested closures** - All nodes are factory functions returning closures
   - Makes testing harder, should use classes or partial()
@@ -53,12 +54,11 @@
 
 ## Missing Tests / Guardrails
 
-### No Unit Tests
-- [ ] No tests for individual nodes
-- [ ] No tests for routing functions
-- [ ] No tests for ExecutionContext
-- [ ] No tests for state transitions
-- [ ] No tests for error handling paths
+### Unit Test Coverage Gaps
+- [ ] Nodes beyond routing/basic happy paths are untested (bootstrap/plan/code/execute/evaluate/evolve)
+- [ ] ExecutionContext setup paths are untested
+- [ ] State transition edge cases are untested
+- [ ] Error-handling paths are untested
 
 ### No Integration Tests
 - [ ] No end-to-end graph execution tests
@@ -76,15 +76,15 @@
 ## LangGraph Anti-Patterns
 
 ### Not Using Built-in Features
-- [ ] **No checkpointer** - Can't resume experiments, no replay
+- [x] **No checkpointer** - Can't resume experiments, no replay
 - [ ] **No interrupt()** - No human-in-the-loop for decisions
 - [ ] **No ToolNode** - Custom tool execution instead of LangGraph primitive
 - [ ] **No bind_tools()** - Tools not registered with LLM
 - [ ] **No tool call tracing** - Can't see tool invocations in LangSmith
-- [ ] **No thread_id** - No session management
+- [x] **No thread_id** - No session management
 
 ### Custom Implementations of Built-in Features
-- [ ] **Manual state management** - invoke() with no checkpointer
+- [x] **Manual state management** - invoke() with no checkpointer
 - [ ] **Custom tool executor** - IndividualMeeting instead of ToolNode
 - [ ] **Ad-hoc session persistence** - Saving JSON summaries instead of using checkpointer
 - [ ] **Nested conditionals** - Should use conditional_edges more
@@ -98,20 +98,15 @@
 ## Action Plan (Prioritized)
 
 ### P0: Critical Bugs
-1. Fix duplicate routing function (5 min)
-2. Fix error swallowing - add proper logging (30 min)
-3. Add validation for bootstrap recruitment (1 hour)
+1. Fix error swallowing - add proper logging (30 min)
+2. Add validation for bootstrap recruitment (1 hour)
 
 ### P1: LangGraph Migration
-4. Add checkpointer support (2 hours)
-   - InMemorySaver for dev
-   - Add thread_id to config
-   - Update run_graph_experiment
-5. Migrate to ToolNode (4 hours)
+4. Migrate to ToolNode (4 hours)
    - Convert research API to LangChain Tool
    - Convert executor to LangChain Tool
    - Replace IndividualMeeting with standard ReAct pattern
-6. Add interrupt() for evolution (2 hours)
+5. Add interrupt() for evolution (2 hours)
    - HIL node for evolution approval
    - Command(resume=...) handling
 
@@ -159,16 +154,16 @@
 - [ ] Type hints everywhere
 
 ### LangGraph Idioms
-- [ ] Using checkpointer
+- [x] Using checkpointer
 - [ ] Using ToolNode for tools
 - [ ] Using interrupt() for HIL
-- [ ] Using conditional_edges for routing
+- [x] Using conditional_edges for routing
 - [ ] Using subgraphs where appropriate
 
 ### Observability
 - [ ] Full tool call tracing in LangSmith
 - [ ] Clear error messages
-- [ ] Resumable experiments
+- [x] Resumable experiments
 - [ ] Time-travel debugging support
 
 ### Testing

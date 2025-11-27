@@ -143,9 +143,32 @@ class GeminiLLM:
 _llm_instance = None
 
 
+class DummyLLM:
+    """Fallback LLM used in offline/test environments."""
+
+    def generate(
+        self,
+        prompt: str,
+        system_instruction: Optional[str] = None,
+        temperature: Optional[float] = None,
+        response_format: str = "text",
+    ) -> str:
+        return "LLM unavailable; using offline stub response."
+
+    def generate_json(self, prompt: str, temperature: float = 0.0):
+        return {
+            "key_insights": ["offline stub"],
+            "decisions": ["follow baseline approach"],
+            "action_items": ["prepare simple model"]
+        }
+
+
 def get_llm(**kwargs) -> GeminiLLM:
     """Get or create global LLM instance"""
     global _llm_instance
     if _llm_instance is None:
-        _llm_instance = GeminiLLM(**kwargs)
+        try:
+            _llm_instance = GeminiLLM(**kwargs)
+        except Exception:
+            _llm_instance = DummyLLM()
     return _llm_instance

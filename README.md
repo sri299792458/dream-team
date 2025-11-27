@@ -131,9 +131,12 @@ print(f"Team size: {len(final_state.team.team_members) + 1}")
 ```
 src/dream_team/
 ├── experiment/              # LangGraph orchestration
-│   ├── state.py            # ExperimentState, AgentConfig (Pydantic models)
-│   ├── graph_app.py        # Graph construction and runner
-│   ├── nodes.py            # All node implementations
+│   ├── graph/
+│   │   ├── state.py        # ExperimentState, AgentConfig (Pydantic models)
+│   │   ├── context.py      # ExecutionContext for non-serializable deps
+│   │   ├── routing.py      # Edge routing helpers
+│   │   ├── nodes.py        # Node implementations
+│   │   └── builder.py      # Graph construction and runner
 │   ├── tracing.py          # LangSmith integration
 │   └── __init__.py         # Public API
 ├── agent.py                 # Agent, KnowledgeBase, Paper classes

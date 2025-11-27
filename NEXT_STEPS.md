@@ -5,6 +5,9 @@
 ### Documentation & Analysis
 - [x] **ARCHITECTURE.md** - Complete system overview
 - [x] **REFACTOR_ISSUES.md** - Detailed issue tracking with priorities
+- [x] Checkpointer + `thread_id` support wired into graph compilation/run
+- [x] Routing helper tests for bootstrap/continue/evolution
+- [x] Offline-safe numpy/pandas/torch stubs and deterministic metric fallbacks
 - [x] Created clean `langgraph-clean` branch
 - [x] Removed deprecated code (~3,000 lines)
 - [x] Fixed critical data context bug (agents hallucinating data)
@@ -18,7 +21,7 @@
 
 **Goal:** Break 1439-line `nodes.py` into focused modules
 
-#### Step 1.1: Create Context Module (30 min)
+#### Step 1.1: Create Context Module (completed)
 ```bash
 # Create src/dream_team/experiment/context.py
 # Move ExecutionContext class from nodes.py
@@ -46,10 +49,10 @@ class ExecutionContext:
     # ... move entire class here
 ```
 
-####Step 1.2: Create Routing Module (30 min)
+####Step 1.2: Create Routing Module (completed)
 ```bash
 # Create src/dream_team/experiment/routing.py
-# Move all routing functions from graph_app.py
+# Move all routing functions from graph/builder.py
 ```
 
 **Files:**
@@ -112,7 +115,7 @@ def create_bootstrap_node(ctx: ExecutionContext):
 #### Step 1.4: Update Imports (30 min)
 
 **Files to update:**
-- `graph_app.py` → import from new modules
+- `graph/builder.py` → import from new modules
 - `__init__.py` → export from new structure
 - All test files
 
@@ -124,13 +127,13 @@ python experiments/agentds_food/run_autonomous_experiment.py --dry-run
 
 ---
 
-### Phase 2: LangGraph Checkpointer (2 hours)
+### Phase 2: LangGraph Checkpointer (done)
 
-**Goal:** Add state persistence and resumability
+**Status:** Implemented via `MemorySaver` + configurable `thread_id` in `graph/builder.py`. Keep the steps below as reference for further refinements or swapping in a persistent saver.
 
 #### Step 2.1: Add Checkpointer Support (1 hour)
 
-**Changes to `graph_app.py`:**
+**Changes to `graph/builder.py`:**
 ```python
 from langgraph.checkpoint.memory import InMemorySaver
 

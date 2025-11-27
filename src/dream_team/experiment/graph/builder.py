@@ -31,14 +31,20 @@ replacing the procedural loop in ExperimentOrchestrator with explicit nodes and 
 Each node accepts and returns ExperimentState.
 """
 
-from typing import Literal, Dict, Any, Optional
-from langgraph.graph import StateGraph, END
+from typing import Dict, Any, Optional
+from langgraph.checkpoint.memory import MemorySaver
+from langgraph.graph import END, StateGraph
 from pathlib import Path
 import os
 
+from .context import ExecutionContext
+from .routing import (
+    route_after_bootstrap,
+    route_after_check_continue,
+    route_after_check_evolution,
+)
 from .state import ExperimentState
 from .nodes import (
-    ExecutionContext,
     create_bootstrap_node,
     create_init_math_framework_node,
     create_plan_node,
@@ -48,30 +54,11 @@ from .nodes import (
     create_check_evolution_node,
     create_evolve_node
 )
-from .tracing import configure_langsmith, trace_experiment, create_experiment_metadata
+from ..tracing import configure_langsmith, trace_experiment, create_experiment_metadata
 
 
 # Node functions are now created via factory functions in nodes.py
 # This avoids hardcoding them and allows dependency injection via ExecutionContext
-
-
-# ============================================================================
-# Routing Logic
-# ============================================================================
-
-def route_after_check_evolution(state: ExperimentState) -> Literal["evolve", "plan"]:
-    """Route to evolution or next iteration based on evolution check"""
-    return "evolve" if state.evolution.triggered else "plan"
-
-
-def route_after_check_continue(state: ExperimentState) -> Literal["complete", "check_evolution"]:
-    """Route to completion or evolution check based on continue check"""
-    return "complete" if state.should_stop else "check_evolution"
-
-
-def route_after_bootstrap(state: ExperimentState) -> Literal["init_math", "plan"]:
-    """Route from bootstrap to math init or directly to planning"""
-    return "init_math" if not state.mathematical_state.iteration_count else "plan"
 
 
 # ============================================================================
@@ -129,7 +116,11 @@ def create_complete_node(ctx: ExecutionContext):
 # Graph Construction
 # ============================================================================
 
-def create_experiment_graph(ctx: ExecutionContext) -> StateGraph:
+def create_experiment_graph(
+    ctx: ExecutionContext,
+    *,
+    checkpointer: Optional[MemorySaver] = None,
+) -> StateGraph:
     """
     Create the LangGraph state graph for experiment orchestration.
 
@@ -194,8 +185,8 @@ def create_experiment_graph(ctx: ExecutionContext) -> StateGraph:
     graph.add_edge("evolve", "plan")
     graph.add_edge("complete", END)
 
-    # Compile graph
-    return graph.compile()
+    # Compile graph with checkpointing support
+    return graph.compile(checkpointer=checkpointer)
 
 
 # ============================================================================
@@ -207,7 +198,10 @@ def run_graph_experiment(
     data_context: Dict[str, Any],
     research_api: Optional[Any] = None,
     enable_tracing: bool = True,
-    langsmith_project: Optional[str] = None
+    langsmith_project: Optional[str] = None,
+    *,
+    checkpointer: Optional[MemorySaver] = None,
+    thread_id: Optional[str] = None,
 ) -> ExperimentState:
     """
     Run the experiment using the LangGraph.
@@ -225,6 +219,10 @@ def run_graph_experiment(
     Environment Variables (for tracing):
         LANGSMITH_API_KEY: LangSmith API key (required for tracing)
         LANGSMITH_PROJECT: Project name (optional, overrides langsmith_project arg)
+
+    Notes:
+        A MemorySaver checkpointer is used by default so runs can be resumed or
+        inspected with a thread_id configured via the `thread_id` argument.
     """
     print("="*70)
     print("🚀 LANGGRAPH EXPERIMENT ORCHESTRATION")
@@ -250,7 +248,9 @@ def run_graph_experiment(
     ctx.create_agents_from_state(state)
 
     # Create and run graph
-    graph = create_experiment_graph(ctx)
+    saver = checkpointer or MemorySaver()
+
+    graph = create_experiment_graph(ctx, checkpointer=saver)
 
     # Run with tracing context
     experiment_name = f"{state.config.target_metric}_optimization"
@@ -258,9 +258,20 @@ def run_graph_experiment(
 
     if enable_tracing and os.getenv('LANGSMITH_API_KEY'):
         with trace_experiment(experiment_name, metadata=metadata):
-            final_state = graph.invoke(state)
+            final_state = graph.invoke(
+                state,
+                config={"configurable": {"thread_id": thread_id or experiment_name}},
+            )
     else:
-        final_state = graph.invoke(state)
+        final_state = graph.invoke(
+            state,
+            config={"configurable": {"thread_id": thread_id or experiment_name}},
+        )
+
+    # LangGraph returns plain dictionaries when using typed states; normalize
+    # back to ExperimentState for downstream callers and tests.
+    if isinstance(final_state, dict):
+        final_state = ExperimentState(**final_state)
 
     print("\n" + "="*70)
     print("✅ EXPERIMENT COMPLETE")

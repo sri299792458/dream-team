@@ -85,7 +85,8 @@ class EvolutionEngine:
     """Orchestrates agent evolution"""
 
     def __init__(self, llm=None, triggers: List[EvolutionTrigger] = None):
-        self.llm = llm or get_llm()
+        # Avoid initializing real LLMs in offline/test environments.
+        self.llm = llm
         self.triggers = triggers or [
             PerformancePlateauTrigger(),
             ErrorPatternTrigger(),
@@ -121,6 +122,8 @@ class EvolutionEngine:
             "reasoning": str
         }
         """
+        if self.llm is None:
+            raise ValueError("EvolutionEngine requires an LLM to propose evolutions.")
 
         papers_context = ""
         if papers:
