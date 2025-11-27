@@ -21,7 +21,6 @@ from .evolution import (
 )
 from .meetings import TeamMeeting, IndividualMeeting
 from .executor import CodeExecutor, extract_code_from_text
-from .orchestrator import ExperimentOrchestrator
 from .utils import save_json, load_json, load_summaries
 from .serialization import RobustJSONEncoder, robust_dump, robust_dumps
 from .knowledge_state import (
@@ -33,9 +32,19 @@ from .knowledge_state import (
 )
 from .team import Team
 
+# LangGraph API (recommended)
+from .experiment import (
+    create_initial_state,
+    run_graph_experiment,
+    AgentConfig,
+    ExperimentState,
+    IterationSummary
+)
+
 __version__ = "0.1.0"
 
 __all__ = [
+    # Core components
     "Agent",
     "Paper",
     "KnowledgeBase",
@@ -53,7 +62,6 @@ __all__ = [
     "IndividualMeeting",
     "CodeExecutor",
     "extract_code_from_text",
-    "ExperimentOrchestrator",
     "save_json",
     "load_json",
     "load_summaries",
@@ -67,4 +75,10 @@ __all__ = [
     "DynamicsState",
     "extract_concepts_from_text",
     "Team",
+    # LangGraph API (recommended)
+    "create_initial_state",
+    "run_graph_experiment",
+    "AgentConfig",
+    "ExperimentState",
+    "IterationSummary",
 ]

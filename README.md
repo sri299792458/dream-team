@@ -123,54 +123,14 @@ print(f"Iterations: {final_state.iteration}")
 print(f"Team size: {len(final_state.team.team_members) + 1}")
 ```
 
-### Component Usage (Advanced)
-
-For direct access to individual components:
-
-```python
-from dream_team import Agent, TeamMeeting, EvolutionEngine, get_research_assistant
-
-# Create agents
-pi = Agent(
-    title="Principal Investigator",
-    expertise="data science, ML, research strategy",
-    goal="solve the prediction challenge",
-    role="lead team and make decisions"
-)
-
-# Run team meeting
-meeting = TeamMeeting(save_dir="results/meetings")
-summary = meeting.run(
-    team_lead=pi,
-    team_members=[data_scientist],
-    agenda="Predict shelf life using temperature data",
-    num_rounds=2
-)
-
-# Research papers
-research = get_research_assistant()
-papers = research.research_topic(
-    query="shelf life prediction food storage",
-    num_papers=5
-)
-
-# Evolve agent
-evolution = EvolutionEngine()
-evolution.evolve_agent(
-    agent=data_scientist,
-    context={"problem": "Shelf life prediction"},
-    papers=papers,
-    trigger_reason="Need domain expertise"
-)
-```
 
 ## Architecture
 
-### LangGraph Orchestration (New)
+### LangGraph Orchestration
 
 ```
 src/dream_team/
-├── experiment/              # LangGraph-based orchestration (NEW)
+├── experiment/              # LangGraph orchestration
 │   ├── state.py            # ExperimentState, AgentConfig (Pydantic models)
 │   ├── graph_app.py        # Graph construction and runner
 │   ├── nodes.py            # All node implementations
@@ -182,17 +142,14 @@ src/dream_team/
 ├── evolution.py             # Evolution engine and triggers
 ├── meetings.py              # Team and individual meetings
 ├── executor.py              # Code execution environment
-├── orchestrator.py          # (Deprecated - use experiment/ instead)
+├── knowledge_state.py       # Mathematical framework (K, δ, θ)
+├── team.py                  # Team class
+├── serialization.py         # JSON serialization utilities
 └── utils.py                 # Helper functions
 
 scripts/
 ├── run_with_tracing.py      # Example with LangSmith tracing
-├── smoke_run.py             # Baseline test
 └── test_graph_skeleton.py   # Graph structure test
-
-tests/
-├── test_nodes.py            # Unit tests for nodes
-└── test_graph_integration.py # Integration tests
 
 experiments/agentds_food/
 ├── data/                    # Benchmark data
@@ -209,11 +166,7 @@ START → bootstrap → init_math → plan → code → execute → evaluate
 
 Each node accepts and returns `ExperimentState`, enabling full observability and checkpointing.
 
-### Migration Note
-
-> **Migrating from old API?** See [MIGRATION_GUIDE.md](MIGRATION_GUIDE.md) for step-by-step instructions.
-
-## New Features
+## Features
 
 ### 🔍 LangSmith Tracing
 
