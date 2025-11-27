@@ -79,7 +79,7 @@ class ExecutionContext:
         self.problem_graph: Optional[KnowledgeGraph] = None
         self.team: Optional[Team] = None
 
-    def create_agents_from_state(self, state: ExperimentState):
+    def create_agents_from_state(self, state: ExperimentState) -> None:
         """Create Agent instances from state configuration"""
         # Create team lead
         lead_cfg = state.team.team_lead
@@ -119,7 +119,7 @@ class ExecutionContext:
         # Update all agents list
         self.all_agents = [self.team_lead] + self.team_members
 
-    def update_state_from_agents(self, state: ExperimentState):
+    def update_state_from_agents(self, state: ExperimentState) -> None:
         """Update state configuration from current agent instances"""
         # Update team lead config
         state.team.team_lead = AgentConfig(
@@ -771,7 +771,7 @@ Output ONLY Python code in ```python blocks.
     return code_node
 
 
-def _refresh_column_schemas(ctx: ExecutionContext, state: ExperimentState):
+def _refresh_column_schemas(ctx: ExecutionContext, state: ExperimentState) -> None:
     """
     Refresh column schemas from current executor state.
 
@@ -1001,7 +1001,7 @@ Then output ONLY the FIXED Python code in ```python blocks.
     return extract_code_from_text(code_output), fix_description
 
 
-def _update_agent_knowledge(ctx: ExecutionContext, state: ExperimentState):
+def _update_agent_knowledge(ctx: ExecutionContext, state: ExperimentState) -> None:
     """
     Extract learnings from iteration and update agent knowledge bases.
 
@@ -1360,7 +1360,7 @@ OR
     return evolve_node
 
 
-def _execute_evolution_plan(ctx: ExecutionContext, state: ExperimentState, plan: str, papers: List):
+def _execute_evolution_plan(ctx: ExecutionContext, state: ExperimentState, plan: str, papers: List) -> None:
     """Helper to execute PI's evolution plan"""
 
     changes_made = []
